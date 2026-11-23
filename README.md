@@ -126,10 +126,9 @@ Pick one:
 - **GitHub Actions:** push this folder to a repo. `.github/workflows/build.yml` builds `LiveTVLauncher-apk` as a downloadable workflow artifact.
 - **Command line** (with the Android SDK installed): `./gradlew assembleRelease`
 
-Because VLC's engine is large, a build makes one APK per processor type instead of one big one:
-- `app-arm64-v8a-release.apk` (about 59 MB): **NVIDIA Shield, OnePlus Pad** and most current devices. Use this one.
-- `app-armeabi-v7a-release.apk` (about 45 MB): older 32-bit devices, or if the arm64 one won't install.
-- `app-x86_64-release.apk`: the Android emulator on a PC.
+Because VLC's engine is large, a build makes only one APK, for 64-bit ARM: `app-arm64-v8a-release.apk` (about 59 MB). It's for the **NVIDIA Shield, OnePlus Pad** and most current devices. It also runs in the Android emulator, which translates ARM apps. To build for other processors too, add `armeabi-v7a` or `x86_64` to the `splits` list in `app/build.gradle`.
+
+Ready-made APKs are attached to this repo's GitHub Releases.
 
 **Building inside OneDrive (or Dropbox, etc.):** syncing locks Gradle's files mid-build. To avoid that, add a `buildRoot` line to `local.properties`, a per-computer file that isn't shared:
 ```

@@ -27,15 +27,14 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // libVLC is large, so build one APK per processor type instead of one huge universal APK:
-    //   arm64-v8a   → NVIDIA Shield, OnePlus Pad and most current devices
-    //   armeabi-v7a → older 32-bit ARM devices
-    //   x86_64      → the Android emulator
+    // libVLC is large, so build only for 64-bit ARM (NVIDIA Shield, OnePlus Pad, most current devices):
+    // output is app-arm64-v8a-release.apk. To also build for 32-bit ARM or the x86_64 emulator,
+    // add 'armeabi-v7a' / 'x86_64' to the include list.
     splits {
         abi {
             enable true
             reset()
-            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            include 'arm64-v8a'
             universalApk false
         }
     }
