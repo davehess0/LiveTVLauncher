@@ -73,6 +73,8 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
 
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
+        maybeStartOnLastChannel(); // channels may already be loaded
         if (!signature().equals(builtSignature)) rebuild();
         else if (current != null) current.tick();
         // Back from the player: show the channel that was playing last (it may have been changed
@@ -91,6 +93,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     }
 
     @Override protected void onPause() {
+        resumed = false;
         handler.removeCallbacks(ticker);
         super.onPause();
     }
@@ -108,7 +111,29 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         // A home screen has nowhere to go back to, so otherwise Back does nothing.
     }
 
+    /** The once-per-start decision (app launch or reboot) has been made. */
+    private static boolean startupHandled;
+    private static final long PROCESS_START = android.os.SystemClock.elapsedRealtime();
+    private boolean resumed;
+
+    /**
+     * Like a cable box: when the app starts, go straight to the last channel you were watching.
+     * Only once per start, only if channels load within a minute, and only if you haven't
+     * already moved on to another screen.
+     */
+    private void maybeStartOnLastChannel() {
+        if (startupHandled || ChannelStore.get().all().isEmpty()) return;
+        startupHandled = true;
+        if (!prefs.startOnLastChannel() || !resumed || guideOverlay) return;
+        if (android.os.SystemClock.elapsedRealtime() - PROCESS_START > 60_000L) return;
+        Channel ch = ChannelStore.get().byNumber(prefs.lastChannel());
+        if (ch == null) return; // never watched anything yet: stay on the home screen
+        AppLog.i("App", "Starting on the last channel: " + ch.number + " " + ch.name);
+        play(ch);
+    }
+
     @Override public void onChannelsChanged() {
+        maybeStartOnLastChannel();
         if (current == null) return;
         View focused = getCurrentFocus();
         boolean hadFocus = focused != null;

@@ -31,6 +31,10 @@ public final class Prefs {
     public String tunerIp() { return sp.getString("tunerIp", ""); }
     public void setTunerIp(String v) { sp.edit().putString("tunerIp", v == null ? "" : v.trim()).apply(); }
 
+    /** When the app starts (or the device boots), go straight to the last channel watched. */
+    public boolean startOnLastChannel() { return sp.getBoolean("startOnLastChannel", true); }
+    public void setStartOnLastChannel(boolean v) { sp.edit().putBoolean("startOnLastChannel", v).apply(); }
+
     /** Security cameras: [{"name":"Driveway","url":"rtsp://..."}] (stored only on this device). */
     public java.util.List<String[]> cameras() {
         java.util.List<String[]> out = new java.util.ArrayList<>();

@@ -94,6 +94,8 @@ Every layout now has a **Streaming** row of big app banners. By default it shows
 
 Pick a channel and it plays right away in the built-in player, straight from the tuner.
 
+**Starting up:** when the app starts, for example after the Shield reboots or when you open it on a tablet, it goes straight to the last channel you were watching, like a cable box. Press Back for the home screen. It happens once per start, never on later Home presses. To change it, go to ⚙ Settings → **When the app opens** → *Show the home screen*.
+
 | Remote | Action |
 |---|---|
 | Up / Down | Open the channel list (what's on each channel now). Up/Down to move, OK to switch, Back or Left/Right to close. It also closes by itself after 10 s. |

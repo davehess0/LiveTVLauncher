@@ -53,6 +53,10 @@ public final class SettingsActivity extends Activity {
                     : Prefs.LAYOUT_WALL.equals(l) ? Prefs.LAYOUT_SIMPLE : Prefs.LAYOUT_GUIDE);
             render();
         });
+        row("When the app opens", prefs.startOnLastChannel() ? "Play the last channel" : "Show the home screen", v -> {
+            prefs.setStartOnLastChannel(!prefs.startOnLastChannel());
+            render();
+        });
         row("Play channels with", playerName(prefs.player()), v -> {
             String pl = prefs.player();
             prefs.setPlayer(Prefs.PLAYER_BUILTIN.equals(pl) ? Prefs.PLAYER_EXTERNAL
