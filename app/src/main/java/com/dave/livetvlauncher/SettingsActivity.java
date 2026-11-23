@@ -46,6 +46,7 @@ public final class SettingsActivity extends Activity {
         title.setPadding(0, 0, 0, Ui.dp(this, 20));
         list.addView(title);
 
+        row("Set up from your phone", "Scan a QR code to enter addresses on your phone", v -> showPhoneSetup());
         row("Home screen layout", layoutName(prefs.layout()), v -> {
             String l = prefs.layout();
             prefs.setLayout(Prefs.LAYOUT_GUIDE.equals(l) ? Prefs.LAYOUT_WALL
@@ -172,6 +173,52 @@ public final class SettingsActivity extends Activity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private PhoneSetupServer phoneServer;
+
+    /** QR code + address of a small settings web page; the page works only while this is showing. */
+    private void showPhoneSetup() {
+        phoneServer = new PhoneSetupServer(this, this::render);
+        String url;
+        try {
+            url = phoneServer.start();
+        } catch (java.io.IOException e) {
+            url = null;
+        }
+        if (url == null) {
+            Toast.makeText(this, "This device isn't on a home network (Wi-Fi or Ethernet) right now.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        int p = Ui.dp(this, 24);
+        box.setPadding(p, p, p, p);
+        android.widget.ImageView qr = new android.widget.ImageView(this);
+        qr.setImageBitmap(PhoneSetupServer.qr(url, Ui.dp(this, 260)));
+        box.addView(qr, new LinearLayout.LayoutParams(Ui.dp(this, 260), Ui.dp(this, 260)));
+        TextView t = Ui.text(this, 16, Ui.TEXT, false);
+        t.setSingleLine(false);
+        t.setPadding(Ui.dp(this, 28), 0, 0, 0);
+        t.setText("Scan with your phone's camera to set the HDHomeRun, Tunarr and Plex addresses, cameras and weather.\n\n"
+                + "Your phone must be on the same Wi-Fi.\n\nOr type this into its browser:\n" + url
+                + "\n\nThe page stops working when you close this.");
+        box.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+        AlertDialog d = new AlertDialog.Builder(this)
+                .setTitle("Set up from your phone")
+                .setView(box)
+                .setPositiveButton("Done", null)
+                .setOnDismissListener(x -> { if (phoneServer != null) { phoneServer.stop(); phoneServer = null; } })
+                .show();
+        if (d.getWindow() != null) d.getWindow().setLayout(Ui.dp(this, 900), -2);
+        // Close by itself after 15 minutes so the page doesn't stay open forever.
+        ui.postDelayed(() -> { if (d.isShowing()) d.dismiss(); }, 15 * 60_000L);
+    }
+
+    @Override protected void onStop() {
+        if (phoneServer != null) { phoneServer.stop(); phoneServer = null; }
+        super.onStop();
     }
 
     /** Add (index -1) or edit / remove a camera. */

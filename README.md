@@ -23,6 +23,20 @@ The design is inspired by Apple TV:
 
 All of the colors are in `Ui.java` if you want to tune them.
 
+## Set up from your phone
+
+Typing addresses with a remote is slow. Instead, go to ⚙ Settings → **Set up from your phone** and scan the QR code with your phone's camera. A settings page opens on your phone, where you can:
+- set the **HDHomeRun**, **Tunarr** and **Plex server** addresses
+- set the **weather** location
+- **add or remove cameras** (passwords are masked)
+
+Press **Save**, and the TV reloads its channels right away.
+
+- Your phone must be on the same Wi-Fi as the TV. The page is served by the TV itself, on port 8765, and nothing goes over the internet.
+- The page only works while the QR code is showing. It stops when you press Done, and on its own after 15 minutes.
+- The QR code holds a random key that changes every time, so other devices on your network can't change settings. Settings PIN, if set, still guards the Settings screen where the code appears.
+- If scanning doesn't work, type the address shown next to the code into the phone's browser.
+
 ## Security cameras (Eufy and other RTSP cameras)
 
 Add cameras in ⚙ Settings → **Cameras** → **Add camera**: give each one a name and its stream address. Once you have at least one, a **Cameras** button appears on every layout.
@@ -198,6 +212,7 @@ app/src/main/java/com/dave/livetvlauncher/
   HdhrClient         Tuner discovery, lineup.json, guide API
   TunarrClient       Tunarr lineup.json + XMLTV guide
   Weather            Current conditions for the clock (Open-Meteo)
+  PhoneSetupServer   "Set up from your phone" web page + QR code
   CamerasActivity    RTSP security-camera grid / full screen
   AppLog / App       Daily log files (3 days, 1 MB/day) + crash logging
   PlexClient         plex.tv link sign-in, server discovery, On Deck / Recently Added, progress reporting
