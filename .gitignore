@@ -1,0 +1,17 @@
+# Build output and caches
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+captures/
+
+# Per-computer settings (SDK path, buildRoot) — never share
+local.properties
+
+# IDE files
+.idea/
+*.iml
+
+# Local screenshots
+preview-*.png

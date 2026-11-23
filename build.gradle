@@ -1,0 +1,15 @@
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
+
+// Optional, per computer: set buildRoot in local.properties to keep build output out of a synced
+// folder (OneDrive locks Gradle's files mid-build). Without it, output goes to the usual build/ folders.
+def localProps = new Properties()
+def localFile = rootProject.file('local.properties')
+if (localFile.exists()) localFile.withInputStream { localProps.load(it) }
+def buildRoot = localProps.getProperty('buildRoot')
+if (buildRoot) {
+    allprojects { p ->
+        p.layout.buildDirectory.set(new File(buildRoot, p == rootProject ? 'root' : p.name))
+    }
+}

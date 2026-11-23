@@ -1,0 +1,997 @@
+package com.dave.livetvlauncher;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import androidx.media3.common.C;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+import androidx.media3.common.Tracks;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.ProgressiveMediaSource;
+import androidx.media3.ui.PlayerView;
+
+import java.util.List;
+
+/**
+ * Full-screen live TV straight from the HDHomeRun tuner.
+ *
+ * Also plays Plex movies/episodes directly from your server (no transcoding) when
+ * Settings → "Open Plex movies in" is set to Built-in player; progress is reported back to Plex.
+ *
+ * Live TV remote:  Up / CH+  next channel      Down / CH-  previous channel
+ *          OK / ⏯    pause / resume (live TV keeps recording while paused)
+ *          Left      back 10 s          Right     forward 10 s
+ *          ⏪        back 30 s          ⏩        forward 30 s (past the live point = back to live)
+ *          Hold Left jump to the channel you were just on
+ *          0-9       type a channel number (51 = 5.1)
+ *          Back      return to the home screen (the tuner is released)
+ */
+@androidx.annotation.OptIn(markerClass = UnstableApi.class)
+public final class PlayerActivity extends Activity {
+    private static final String X_NUMS = "nums", X_NAMES = "names", X_URLS = "urls", X_START = "start";
+
+    public static Intent intent(Context c, List<Channel> lineup, Channel start) {
+        int n = lineup.size();
+        boolean contains = lineup.contains(start);
+        if (!contains) n++;
+        String[] nums = new String[n], names = new String[n], urls = new String[n];
+        int i = 0, startIdx = 0;
+        if (!contains) { nums[0] = start.number; names[0] = start.name; urls[0] = start.streamUrl; i = 1; }
+        for (Channel ch : lineup) {
+            if (ch == start) startIdx = i;
+            nums[i] = ch.number; names[i] = ch.name; urls[i] = ch.streamUrl; i++;
+        }
+        return new Intent(c, PlayerActivity.class)
+                .putExtra(X_NUMS, nums).putExtra(X_NAMES, names).putExtra(X_URLS, urls)
+                .putExtra(X_START, startIdx);
+    }
+
+    private static final String X_PLEX = "plex";
+
+    /** Direct-play a Plex item from the server. */
+    public static Intent plexIntent(Context c, PlexClient.Item it, String base, String token) {
+        String url = PlexClient.strip(base) + it.partKey
+                + (it.partKey.contains("?") ? "&" : "?") + "X-Plex-Token=" + Uri.encode(token);
+        return new Intent(c, PlayerActivity.class)
+                .putExtra(X_PLEX, true)
+                .putExtra(X_NUMS, new String[]{it.title})
+                .putExtra(X_NAMES, new String[]{it.subtitle})
+                .putExtra(X_URLS, new String[]{url})
+                .putExtra("ratingKey", it.ratingKey)
+                .putExtra("startMs", it.viewOffsetMs)
+                .putExtra("durationMs", it.durationMs)
+                .putExtra("base", base)
+                .putExtra("token", token);
+    }
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final java.util.concurrent.ExecutorService net = java.util.concurrent.Executors.newSingleThreadExecutor();
+    private boolean plexMode;
+    private String plexKey, plexBase, plexToken;
+    private long plexStartMs, plexDurationMs;
+    private PlexClient plex;
+    private final Runnable reporter = new Runnable() {
+        @Override public void run() {
+            reportPlex(playingNow() ? "playing" : "paused");
+            handler.postDelayed(this, 10_000);
+        }
+    };
+    private String[] nums, names, urls;
+    private int index, previousIndex = -1;
+    private ExoPlayer player;
+    private PlayerView view;
+    private LinearLayout banner;
+    private TextView bannerChannel, bannerTitle, bannerMeta, entry, error;
+    private android.widget.ProgressBar spinner;
+    private Ui.ProgressLine bannerProgress;
+    private final StringBuilder typed = new StringBuilder();
+    private int retries;
+    private boolean undecodable; // current channel has no playable video/audio track
+    private long tuneStartedAt;  // for logging how long tuning takes
+    private boolean plexFailed;  // built-in player couldn't play this Plex file: OK opens it in Plex instead
+    private FrameLayout root;
+
+    // ---- VLC fallback: for video / audio this device can't decode itself ----
+
+    /** VLC's engine while it's playing (null = the regular player is in use). */
+    private VlcEngine vlc;
+    /** Sources (host:port) that needed VLC once already this session: go straight to VLC for them. */
+    private static final java.util.Set<String> vlcSources = new java.util.HashSet<>();
+
+    private static String sourceOf(String url) {
+        Uri u = Uri.parse(url);
+        return u.getHost() + ":" + u.getPort();
+    }
+
+    private void ensureVlc() {
+        if (vlc != null) return;
+        vlc = new VlcEngine(this, root, 1, new VlcEngine.Listener() {
+            @Override public void onPlaying() {
+                spinner.setVisibility(View.GONE);
+                error.setVisibility(View.GONE);
+                retries = 0;
+                if (tuneStartedAt > 0) {
+                    AppLog.i("Player", (plexMode ? "Plex item" : "Channel " + nums[index]) + " playing in VLC after "
+                            + (System.currentTimeMillis() - tuneStartedAt) + " ms");
+                    tuneStartedAt = 0;
+                }
+                if (plexMode) showPlexBanner();
+            }
+            @Override public void onBuffering(boolean buffering) {
+                if (vlc != null && !vlc.isPlaying()) spinner.setVisibility(buffering ? View.VISIBLE : View.GONE);
+            }
+            @Override public void onError(String why) {
+                AppLog.e("Player", (plexMode ? "Plex item" : "Channel " + nums[index]) + ": " + why, null);
+                if (plexMode) {
+                    plexFailed = true;
+                    showError("This file can't play here, even with VLC.\n\nPress OK to open it in the Plex app, or Back to return.");
+                } else {
+                    retryOrFail("VLC_ERROR");
+                }
+            }
+            @Override public void onEnded() {
+                if (plexMode) { reportPlex("stopped"); finish(); }
+                else retryOrFail("STREAM_ENDED");
+            }
+        });
+        view.setVisibility(View.INVISIBLE);
+        if (player != null) player.stop();
+    }
+
+    private void releaseVlc() {
+        if (vlc == null) return;
+        vlc.release();
+        vlc = null;
+        view.setVisibility(View.VISIBLE);
+    }
+
+    // Engine-neutral helpers (regular player or VLC).
+    private boolean wantPlay() { return vlc != null ? vlc.wantPlay() : player != null && player.getPlayWhenReady(); }
+    private void setWantPlay(boolean p) { if (vlc != null) vlc.setWantPlay(p); else if (player != null) player.setPlayWhenReady(p); }
+    private boolean playingNow() { return vlc != null ? vlc.isPlaying() : player != null && player.isPlaying(); }
+    private long posMs() { return vlc != null ? vlc.timeMs() : player != null ? player.getCurrentPosition() : 0; }
+    private long durMs() {
+        long d = vlc != null ? vlc.lengthMs() : player != null ? player.getDuration() : 0;
+        return d > 0 ? d : plexDurationMs;
+    }
+    private void seekToMs(long ms) { if (vlc != null) vlc.seekTo(ms); else if (player != null) player.seekTo(ms); }
+
+    /** Live channel the regular player can't decode: keep the recording buffer, play it with VLC. */
+    private void switchLiveToVlc(String why) {
+        AppLog.i("Player", "Channel " + nums[index] + ": switching to VLC (" + why + ")");
+        vlcSources.add(sourceOf(urls[index]));
+        error.setVisibility(View.GONE);
+        spinner.setVisibility(View.VISIBLE);
+        ensureVlc();
+        playFrom(timeshift.offsetAt(streamTimeMs()));
+        setWantPlay(true);
+    }
+
+    /** Plex file the regular player can't decode: continue in VLC from the same spot. */
+    private void switchPlexToVlc(String why) {
+        long at = Math.max(posMs(), Math.max(0, plexStartMs - 5000));
+        AppLog.i("Player", "Plex: switching to VLC at " + at / 1000 + " s (" + why + ")");
+        error.setVisibility(View.GONE);
+        spinner.setVisibility(View.VISIBLE);
+        tuneStartedAt = System.currentTimeMillis();
+        ensureVlc();
+        vlc.play(urls[0], at);
+    }
+    private Prefs prefs;
+    /** Live TV plays from this on-disk buffer so it can be paused and rewound. */
+    private Timeshift timeshift;
+    /** Broadcast time (wall-clock ms) at the start of the current media source. */
+    private long startTimeMs;
+    /** Within this of the live point counts as live (covers normal player buffering). */
+    private static final long LIVE_SLACK_MS = 6000;
+    private boolean leftHeld;
+
+    private final Runnable hideBanner = () -> banner.animate().alpha(0f).setDuration(250).start();
+    private final Runnable bannerTick = () -> { if (!plexMode && player != null) showBanner(); };
+    private final Runnable commitEntry = this::commitTypedChannel;
+
+    @Override protected void onCreate(Bundle b) {
+        super.onCreate(b);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        prefs = new Prefs(this);
+        Intent in = getIntent();
+        nums = in.getStringArrayExtra(X_NUMS);
+        names = in.getStringArrayExtra(X_NAMES);
+        urls = in.getStringArrayExtra(X_URLS);
+        index = in.getIntExtra(X_START, 0);
+        if (nums == null || nums.length == 0) { finish(); return; }
+        plexMode = in.getBooleanExtra(X_PLEX, false);
+        if (plexMode) {
+            plexKey = in.getStringExtra("ratingKey");
+            plexBase = in.getStringExtra("base");
+            plexToken = in.getStringExtra("token");
+            plexStartMs = in.getLongExtra("startMs", 0);
+            plexDurationMs = in.getLongExtra("durationMs", 0);
+            plex = new PlexClient(prefs.clientId());
+        }
+
+        root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF000000);
+        view = new PlayerView(this);
+        view.setUseController(false);
+        view.setKeepContentOnPlayerReset(true);
+        root.addView(view, new FrameLayout.LayoutParams(-1, -1));
+        // Touch layer over the video (VLC's view is inserted below it when used): tap = controls,
+        // swipe up/down = channel list, swipe left/right = skip back/forward.
+        root.addView(touchLayer(), new FrameLayout.LayoutParams(-1, -1));
+
+        banner = new LinearLayout(this);
+        banner.setOrientation(LinearLayout.VERTICAL);
+        int p = Ui.dp(this, 28);
+        banner.setPadding(p, p, p, p);
+        banner.setBackground(new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
+                new int[]{0xE6000000, 0x00000000}));
+        bannerChannel = Ui.text(this, 18, Ui.ACCENT, true);
+        bannerTitle = Ui.text(this, 30, Ui.TEXT, true);
+        bannerTitle.setPadding(0, Ui.dp(this, 6), 0, 0);
+        bannerMeta = Ui.text(this, 16, Ui.SUB, false);
+        bannerMeta.setPadding(0, Ui.dp(this, 6), 0, 0);
+        bannerProgress = new Ui.ProgressLine(this, Ui.ACCENT);
+        banner.addView(bannerChannel);
+        banner.addView(bannerTitle);
+        banner.addView(bannerMeta);
+        banner.addView(bannerProgress, Ui.margins(Ui.lp(Ui.dp(this, 420), Ui.dp(this, 5)), 0, Ui.dp(this, 12), 0, 0));
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        root.addView(banner, blp);
+
+        entry = Ui.text(this, 48, Ui.TEXT, true);
+        entry.setPadding(Ui.dp(this, 20), Ui.dp(this, 10), Ui.dp(this, 20), Ui.dp(this, 10));
+        entry.setBackground(Ui.rounded(0xCC000000, Ui.dp(this, 12), 0, 0));
+        entry.setVisibility(View.GONE);
+        FrameLayout.LayoutParams elp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        elp.setMargins(0, Ui.dp(this, 32), Ui.dp(this, 40), 0);
+        root.addView(entry, elp);
+
+        error = Ui.text(this, 20, Ui.TEXT, false);
+        error.setSingleLine(false);
+        error.setGravity(Gravity.CENTER);
+        error.setVisibility(View.GONE);
+        root.addView(error, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+
+        // Spinner while a channel tunes or the player buffers (also after rewinding / skipping).
+        spinner = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleLarge);
+        spinner.setIndeterminate(true);
+        spinner.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(Ui.TEXT));
+        spinner.setVisibility(View.GONE);
+        int s = Ui.dp(this, 64);
+        root.addView(spinner, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
+
+        buildTouchControls(root);
+        if (!plexMode) buildChannelGuide(root);
+        setContentView(root);
+    }
+
+    // ---- Touch controls (phones / tablets). A TV remote never triggers these. ----
+
+    private FrameLayout controls;
+    private TextView playPauseBtn, liveBtn;
+    private final Runnable hideControls = () -> {
+        if (controls != null) controls.animate().alpha(0f).setDuration(200)
+                .withEndAction(() -> controls.setVisibility(View.GONE)).start();
+    };
+
+    private View touchLayer() {
+        View v = new View(this);
+        android.view.GestureDetector gd = new android.view.GestureDetector(this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDown(android.view.MotionEvent e) { return true; }
+            @Override public boolean onSingleTapConfirmed(android.view.MotionEvent e) {
+                if (guideShowing()) { hideChannelGuide(); return true; }
+                if (controls.getVisibility() == View.VISIBLE) hideControls.run(); else showControls();
+                return true;
+            }
+            @Override public boolean onDoubleTap(android.view.MotionEvent e) {
+                // Double-tap the left / right half: back 10 s / forward 10 s (like most video apps).
+                boolean left = e.getX() < v.getWidth() / 2f;
+                if (plexMode) onPlexKey(left ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT);
+                else seekBy(left ? -10_000 : 10_000);
+                showControls();
+                return true;
+            }
+            @Override public boolean onFling(android.view.MotionEvent a, android.view.MotionEvent b, float vx, float vy) {
+                if (a == null) return false;
+                float dx = b.getX() - a.getX(), dy = b.getY() - a.getY();
+                if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > Ui.dp(PlayerActivity.this, 60)) {
+                    if (!plexMode) showChannelGuide(); // swipe up or down: channel list
+                    return true;
+                }
+                if (Math.abs(dx) > Ui.dp(PlayerActivity.this, 80)) {
+                    if (plexMode) onPlexKey(dx < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT);
+                    else seekBy(dx < 0 ? -30_000 : 30_000);
+                    showControls();
+                    return true;
+                }
+                return false;
+            }
+        });
+        v.setOnTouchListener((view1, ev) -> gd.onTouchEvent(ev));
+        return v;
+    }
+
+    /** A round, semi-transparent touch button. Not focusable, so the TV remote never lands on it. */
+    private TextView touchButton(String label, float sp, int sizeDp, View.OnClickListener click) {
+        TextView b = Ui.text(this, sp, Ui.TEXT, true);
+        b.setText(label);
+        b.setGravity(Gravity.CENTER);
+        b.setBackground(Ui.rounded(0x99000000, Ui.dp(this, sizeDp / 2), 0, 0));
+        b.setFocusable(false);
+        b.setOnClickListener(x -> { click.onClick(x); bumpControls(); });
+        return b;
+    }
+
+    private FrameLayout.LayoutParams at(int sizeDp, int gravity, int mx, int my) {
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Ui.dp(this, sizeDp), Ui.dp(this, sizeDp), gravity);
+        lp.setMargins(Ui.dp(this, mx), Ui.dp(this, my), Ui.dp(this, mx), Ui.dp(this, my));
+        return lp;
+    }
+
+    private void buildTouchControls(FrameLayout root) {
+        controls = new FrameLayout(this);
+        controls.setVisibility(View.GONE);
+
+        // Top left: back to the home screen.
+        controls.addView(touchButton("←", 26, 64, x -> finish()), at(64, Gravity.TOP | Gravity.START, 24, 24));
+
+        // Centre: skip back, play / pause, skip forward.
+        LinearLayout mid = new LinearLayout(this);
+        mid.setGravity(Gravity.CENTER);
+        int gap = Ui.dp(this, 28);
+        if (plexMode) {
+            mid.addView(touchButton("−10", 18, 76, x -> onPlexKey(KeyEvent.KEYCODE_DPAD_LEFT)), Ui.margins(Ui.lp(Ui.dp(this, 76), Ui.dp(this, 76)), 0, 0, gap, 0));
+            playPauseBtn = touchButton("❚❚", 30, 104, x -> { onPlexKey(KeyEvent.KEYCODE_DPAD_CENTER); updatePlayPause(); });
+            mid.addView(playPauseBtn, Ui.margins(Ui.lp(Ui.dp(this, 104), Ui.dp(this, 104)), 0, 0, gap, 0));
+            mid.addView(touchButton("+30", 18, 76, x -> onPlexKey(KeyEvent.KEYCODE_DPAD_RIGHT)), Ui.lp(Ui.dp(this, 76), Ui.dp(this, 76)));
+        } else {
+            mid.addView(touchButton("−30", 16, 64, x -> seekBy(-30_000)), Ui.margins(Ui.lp(Ui.dp(this, 64), Ui.dp(this, 64)), 0, 0, gap, 0));
+            mid.addView(touchButton("−10", 18, 76, x -> seekBy(-10_000)), Ui.margins(Ui.lp(Ui.dp(this, 76), Ui.dp(this, 76)), 0, 0, gap, 0));
+            playPauseBtn = touchButton("❚❚", 30, 104, x -> { togglePause(); updatePlayPause(); });
+            mid.addView(playPauseBtn, Ui.margins(Ui.lp(Ui.dp(this, 104), Ui.dp(this, 104)), 0, 0, gap, 0));
+            mid.addView(touchButton("+10", 18, 76, x -> seekBy(10_000)), Ui.margins(Ui.lp(Ui.dp(this, 76), Ui.dp(this, 76)), 0, 0, gap, 0));
+            mid.addView(touchButton("+30", 16, 64, x -> seekBy(30_000)), Ui.lp(Ui.dp(this, 64), Ui.dp(this, 64)));
+        }
+        controls.addView(mid, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+
+        if (!plexMode) {
+            // Top right: channel list, and jump back to live.
+            TextView list = touchButton("☰  Channels", 16, 56, x -> showChannelGuide());
+            FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(-2, Ui.dp(this, 56), Gravity.TOP | Gravity.END);
+            llp.setMargins(0, Ui.dp(this, 28), Ui.dp(this, 24), 0);
+            list.setPadding(Ui.dp(this, 22), 0, Ui.dp(this, 22), 0);
+            controls.addView(list, llp);
+            liveBtn = touchButton("● LIVE", 15, 48, x -> seekBy(24L * 3600_000));
+            liveBtn.setTextColor(Ui.LIVE_RED);
+            FrameLayout.LayoutParams lvp = new FrameLayout.LayoutParams(-2, Ui.dp(this, 48), Gravity.TOP | Gravity.END);
+            lvp.setMargins(0, Ui.dp(this, 96), Ui.dp(this, 24), 0);
+            liveBtn.setPadding(Ui.dp(this, 20), 0, Ui.dp(this, 20), 0);
+            controls.addView(liveBtn, lvp);
+
+            // Right edge: channel up / down.
+            LinearLayout ch = new LinearLayout(this);
+            ch.setOrientation(LinearLayout.VERTICAL);
+            ch.setGravity(Gravity.CENTER_HORIZONTAL);
+            ch.addView(touchButton("▲", 24, 68, x -> tune(index + 1, true)), Ui.lp(Ui.dp(this, 68), Ui.dp(this, 68)));
+            TextView chLabel = Ui.text(this, 13, Ui.SUB, true);
+            chLabel.setText("CH");
+            chLabel.setGravity(Gravity.CENTER);
+            chLabel.setShadowLayer(4, 0, 1, 0xFF000000);
+            ch.addView(chLabel, Ui.margins(Ui.lp(-2, -2), 0, Ui.dp(this, 6), 0, Ui.dp(this, 6)));
+            ch.addView(touchButton("▼", 24, 68, x -> tune(index - 1, true)), Ui.lp(Ui.dp(this, 68), Ui.dp(this, 68)));
+            FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL | Gravity.END);
+            clp.setMargins(0, 0, Ui.dp(this, 28), 0);
+            controls.addView(ch, clp);
+        }
+        root.addView(controls, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void showControls() {
+        if (controls == null) return;
+        controls.animate().cancel();
+        controls.setAlpha(1f);
+        controls.setVisibility(View.VISIBLE);
+        updatePlayPause();
+        if (plexMode) showPlexBanner(); else showBanner();
+        bumpControls();
+    }
+
+    /** Controls stay up while paused; otherwise they fade out after a few seconds without a touch. */
+    private void bumpControls() {
+        handler.removeCallbacks(hideControls);
+        if (controls != null && controls.getVisibility() == View.VISIBLE && wantPlay())
+            handler.postDelayed(hideControls, 4000);
+        updatePlayPause();
+    }
+
+    private void updatePlayPause() {
+        if (playPauseBtn != null) playPauseBtn.setText(wantPlay() ? "❚❚" : "▶");
+        if (liveBtn != null) liveBtn.setVisibility(!plexMode && behindLiveMs() > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent e) {
+        if (guideShowing()) bumpGuideTimer(); // scrolling the channel list keeps it open
+        return super.dispatchTouchEvent(e);
+    }
+
+    // ---- Channel guide overlay (Up / Down while watching) ----
+
+    private LinearLayout guide;
+    private android.widget.ListView guideList;
+    private final Runnable hideGuide = this::hideChannelGuide;
+    private static final long GUIDE_IDLE_MS = 10_000;
+
+    private void buildChannelGuide(FrameLayout root) {
+        guide = new LinearLayout(this);
+        guide.setOrientation(LinearLayout.VERTICAL);
+        int p = Ui.dp(this, 24);
+        guide.setPadding(p, p, p, p);
+        guide.setBackground(new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xF20A0A0C, 0xE60A0A0C, 0x000A0A0C}));
+        TextView title = Ui.text(this, 22, Ui.TEXT, true);
+        title.setText("Channels");
+        title.setPadding(Ui.dp(this, 8), 0, 0, Ui.dp(this, 12));
+        guide.addView(title);
+        guideList = new android.widget.ListView(this);
+        guideList.setDivider(null);
+        guideList.setDividerHeight(Ui.dp(this, 6));
+        guideList.setSelector(Ui.rounded(Ui.TEXT, Ui.dp(this, 14), 0, 0));
+        guideList.setDrawSelectorOnTop(false);
+        guideList.setVerticalScrollBarEnabled(false);
+        guideList.setAdapter(new ChannelGuideAdapter());
+        guideList.setOnItemClickListener((parent, v, pos, id) -> {
+            hideChannelGuide();
+            if (pos != index) tune(pos, true); else showBanner();
+        });
+        guideList.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View v, int pos, long id) {
+                ((ChannelGuideAdapter) guideList.getAdapter()).selected = pos;
+                ((ChannelGuideAdapter) guideList.getAdapter()).notifyDataSetChanged();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+        });
+        guide.addView(guideList, new LinearLayout.LayoutParams(-1, 0, 1));
+        guide.setVisibility(View.GONE);
+        root.addView(guide, new FrameLayout.LayoutParams(Ui.dp(this, 620), -1, Gravity.START));
+    }
+
+    private void showChannelGuide() {
+        if (guide == null) return;
+        banner.animate().alpha(0f).setDuration(150).start();
+        if (controls != null) { handler.removeCallbacks(hideControls); controls.setVisibility(View.GONE); }
+        ((ChannelGuideAdapter) guideList.getAdapter()).notifyDataSetChanged();
+        guide.setVisibility(View.VISIBLE);
+        guideList.requestFocus();
+        guideList.setSelectionFromTop(index, Ui.dp(this, 200)); // current channel, a little below the top
+        bumpGuideTimer();
+    }
+
+    private void hideChannelGuide() {
+        if (guide == null || guide.getVisibility() != View.VISIBLE) return;
+        handler.removeCallbacks(hideGuide);
+        guide.setVisibility(View.GONE);
+        view.requestFocus();
+    }
+
+    private boolean guideShowing() { return guide != null && guide.getVisibility() == View.VISIBLE; }
+
+    private void bumpGuideTimer() {
+        handler.removeCallbacks(hideGuide);
+        handler.postDelayed(hideGuide, GUIDE_IDLE_MS);
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        if (guideShowing()) {
+            bumpGuideTimer();
+            if (e.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+                if (e.getAction() == KeyEvent.ACTION_UP) hideChannelGuide();
+                return true;
+            }
+            // Left / Right close the list without changing anything.
+            if (e.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT || e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (e.getAction() == KeyEvent.ACTION_UP) hideChannelGuide();
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(e);
+    }
+
+    /** One row per channel: number, name, what's on now (+ progress). The playing channel is marked. */
+    private final class ChannelGuideAdapter extends android.widget.BaseAdapter {
+        int selected = -1;
+
+        @Override public int getCount() { return nums.length; }
+        @Override public Object getItem(int i) { return nums[i]; }
+        @Override public long getItemId(int i) { return i; }
+
+        @Override public View getView(int i, View convert, android.view.ViewGroup parent) {
+            LinearLayout row = (LinearLayout) convert;
+            if (row == null) {
+                row = new LinearLayout(PlayerActivity.this);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                int pad = Ui.dp(PlayerActivity.this, 14);
+                row.setPadding(pad, Ui.dp(PlayerActivity.this, 10), pad, Ui.dp(PlayerActivity.this, 10));
+                TextView num = Ui.text(PlayerActivity.this, 20, Ui.TEXT, true);
+                row.addView(num, Ui.lp(Ui.dp(PlayerActivity.this, 70), -2));
+                LinearLayout mid = new LinearLayout(PlayerActivity.this);
+                mid.setOrientation(LinearLayout.VERTICAL);
+                mid.addView(Ui.text(PlayerActivity.this, 13, Ui.SUB, true));
+                mid.addView(Ui.text(PlayerActivity.this, 17, Ui.TEXT, true));
+                Ui.ProgressLine pl = new Ui.ProgressLine(PlayerActivity.this, Ui.ACCENT);
+                mid.addView(pl, Ui.margins(Ui.lp(Ui.dp(PlayerActivity.this, 160), Ui.dp(PlayerActivity.this, 3)), 0, Ui.dp(PlayerActivity.this, 6), 0, 0));
+                row.addView(mid, Ui.lpWeight(0, -2, 1));
+            }
+            boolean focused = i == selected && guideList.hasFocus();
+            boolean playing = i == index;
+            TextView num = (TextView) row.getChildAt(0);
+            LinearLayout mid = (LinearLayout) row.getChildAt(1);
+            TextView name = (TextView) mid.getChildAt(0), show = (TextView) mid.getChildAt(1);
+            Ui.ProgressLine pl = (Ui.ProgressLine) mid.getChildAt(2);
+            num.setText(nums[i]);
+            name.setText((playing ? "● " : "") + names[i]);
+            Channel ch = ChannelStore.get().byNumber(nums[i]);
+            long now = System.currentTimeMillis() / 1000L;
+            Channel.Airing a = ch != null ? ch.now(now) : null;
+            show.setText(a != null ? a.title : "—");
+            pl.setProgress(a != null ? a.progress(now) : 0);
+            pl.setVisibility(a != null ? View.VISIBLE : View.INVISIBLE);
+            // Dark text on the white highlight, light text elsewhere; the playing channel's name in red.
+            num.setTextColor(focused ? 0xFF000000 : Ui.TEXT);
+            show.setTextColor(focused ? 0xFF000000 : Ui.TEXT);
+            name.setTextColor(playing ? Ui.LIVE_RED : focused ? 0xFF3A3A3C : Ui.SUB);
+            return row;
+        }
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        if (nums == null) return;
+        player = new ExoPlayer.Builder(this).build();
+        player.addListener(new Player.Listener() {
+            @Override public void onPlayerError(PlaybackException e) {
+                if (vlc != null) return; // VLC has taken over
+                AppLog.e("Player", (plexMode ? "Plex item " : "Channel " + nums[index] + " " + names[index] + " ")
+                        + "error " + e.getErrorCodeName(), e.getCause() != null ? e.getCause() : e);
+                boolean decoderProblem = e.errorCode >= 4000 && e.errorCode < 6000; // decoding / audio output
+                if (plexMode) {
+                    // Video or audio this device can't handle: VLC has its own decoders.
+                    if (decoderProblem) { switchPlexToVlc(e.getErrorCodeName()); return; }
+                    plexFailed = true;
+                    showError("This file can't play in the built-in player (" + e.getErrorCodeName() + ").\n\n"
+                            + "Press OK to open it in the Plex app, or Back to return.");
+                    return;
+                }
+                if (decoderProblem) { switchLiveToVlc(e.getErrorCodeName()); return; }
+                retryOrFail(e.getErrorCodeName());
+            }
+
+            @Override public void onTracksChanged(Tracks tracks) {
+                if (vlc != null) return;
+                logVideoFormat(tracks);
+                if (tracks.isEmpty()) return;
+                // A video or audio track this device has no decoder for: hand over to VLC
+                // (otherwise the picture stays black, or the sound is missing).
+                String missing = unsupported(tracks, C.TRACK_TYPE_VIDEO, "video")
+                        + unsupported(tracks, C.TRACK_TYPE_AUDIO, "audio");
+                if (!missing.isEmpty()) {
+                    AppLog.w("Player", (plexMode ? "Plex item" : "Channel " + nums[index])
+                            + " has no built-in decoder for " + missing.trim());
+                    if (plexMode) switchPlexToVlc("no decoder for " + missing.trim());
+                    else switchLiveToVlc("no decoder for " + missing.trim());
+                }
+            }
+
+            @Override public void onIsPlayingChanged(boolean playing) {
+                // The Plex banner is first drawn before playback starts; refresh it so it doesn't
+                // stay stuck on "0:00 · Paused" (and so it hides itself once playing).
+                if (plexMode && vlc == null && error.getVisibility() != View.VISIBLE) showPlexBanner();
+            }
+
+            @Override public void onPlaybackStateChanged(int state) {
+                if (vlc != null) return;
+                if (state == Player.STATE_BUFFERING) spinner.setVisibility(View.VISIBLE);
+                else if (state == Player.STATE_READY) spinner.setVisibility(View.GONE);
+                if (state == Player.STATE_READY) { retries = 0; error.setVisibility(View.GONE); }
+                if (state == Player.STATE_READY && tuneStartedAt > 0) {
+                    AppLog.i("Player", (plexMode ? "Plex item" : "Channel " + nums[index]) + " playing after "
+                            + (System.currentTimeMillis() - tuneStartedAt) + " ms");
+                    tuneStartedAt = 0;
+                }
+                if (plexMode && state == Player.STATE_ENDED) { reportPlex("stopped"); finish(); }
+                // A live tuner stream never really ends: the connection dropped, so retune.
+                if (!plexMode && state == Player.STATE_ENDED && !undecodable) retryOrFail("STREAM_ENDED");
+            }
+        });
+        view.setPlayer(player);
+        if (plexMode) startPlex(); else tune(index, true);
+    }
+
+    private void startPlex() {
+        // Resume where Plex says you left off (minus a few seconds of context).
+        long start = Math.max(0, plexStartMs - 5000);
+        tuneStartedAt = System.currentTimeMillis();
+        AppLog.i("Player", "Plex: " + nums[0] + " from " + start / 1000 + " s");
+        player.setMediaItem(MediaItem.fromUri(Uri.parse(urls[0])), start);
+        player.prepare();
+        player.setPlayWhenReady(true);
+        bannerChannel.setText("PLEX");
+        bannerChannel.setTextColor(Ui.PLEX);
+        bannerTitle.setText(nums[0]);
+        showPlexBanner();
+        handler.postDelayed(reporter, 10_000);
+    }
+
+    private void showPlexBanner() {
+        if (player == null && vlc == null) return;
+        long pos = posMs();
+        long dur = durMs();
+        bannerMeta.setText((names[0].isEmpty() ? "" : names[0] + "  ·  ") + fmt(pos) + " / " + fmt(dur)
+                + (playingNow() ? "" : "   ❚❚ Paused"));
+        bannerProgress.setProgress(dur > 0 ? pos / (float) dur : 0);
+        bannerProgress.setVisibility(View.VISIBLE);
+        banner.animate().cancel();
+        banner.setAlpha(1f);
+        handler.removeCallbacks(hideBanner);
+        if (playingNow()) handler.postDelayed(hideBanner, 4000);
+    }
+
+    private static String fmt(long ms) {
+        long t = Math.max(0, ms / 1000);
+        return t >= 3600 ? String.format(java.util.Locale.US, "%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60)
+                : String.format(java.util.Locale.US, "%d:%02d", t / 60, t % 60);
+    }
+
+    private void reportPlex(String state) {
+        if (!plexMode || (player == null && vlc == null)) return;
+        final long pos = posMs();
+        final long dur = durMs();
+        final boolean finished = "stopped".equals(state) && dur > 0 && pos > dur * 0.9;
+        net.execute(() -> {
+            plex.timeline(plexBase, plexToken, plexKey, state, pos, dur);
+            if (finished) plex.scrobble(plexBase, plexToken, plexKey);
+        });
+    }
+
+    private boolean onPlexKey(int keyCode) {
+        if (plexFailed && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
+            AppLog.i("Plex", "Falling back to the Plex app for " + nums[0]);
+            PlexStore.openInPlexApp(this, plexKey, plexStartMs);
+            finish();
+            return true;
+        }
+        if (player == null && vlc == null) return false;
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                setWantPlay(!wantPlay());
+                handler.postDelayed(this::showPlexBanner, 150);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_MEDIA_REWIND:
+                seekToMs(Math.max(0, posMs() - 10_000));
+                showPlexBanner();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+                seekToMs(posMs() + 30_000);
+                showPlexBanner();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+            case KeyEvent.KEYCODE_INFO:
+                showPlexBanner();
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /** Release the player (and the tuner) whenever we're not on screen. */
+    @Override protected void onStop() {
+        handler.removeCallbacksAndMessages(null);
+        if (plexMode) {
+            reportPlex("stopped");
+            if (player != null || vlc != null) plexStartMs = posMs() + 5000; // resume here if reopened
+        }
+        releaseVlc();
+        if (player != null) {
+            view.setPlayer(null);
+            player.release();
+            player = null;
+        }
+        if (timeshift != null) { timeshift.stop(); timeshift = null; } // releases the tuner, deletes the buffer
+        super.onStop();
+    }
+
+    private void retryOrFail(String reason) {
+        AppLog.w("Player", "Channel " + nums[index] + ": " + reason + (retries < 2 ? " · retune " + (retries + 1) + "/2" : " · giving up"));
+        if (retries++ < 2) {
+            handler.postDelayed(() -> tune(index, false), 1500);
+        } else {
+            showError("Couldn't play " + nums[index] + " " + names[index] + "\n" + reason
+                    + "\n\nAll tuners may be in use. Try another channel or press Back.");
+        }
+    }
+
+    /**
+     * Logs the video format, e.g. "video/avc 3840x2160 · BT2020/PQ · 8-bit". Flags HDR in an 8-bit
+     * stream (an H.264 transcode that kept HDR tags), which shows up as badly wrong colors.
+     */
+    private void logVideoFormat(Tracks tracks) {
+        for (Tracks.Group g : tracks.getGroups()) {
+            if (g.getType() != C.TRACK_TYPE_VIDEO || g.length == 0) continue;
+            androidx.media3.common.Format f = g.getTrackFormat(0);
+            androidx.media3.common.ColorInfo ci = f.colorInfo;
+            String color = ci == null ? "SDR (no color info)" : ci.toLogString();
+            boolean hdr = ci != null && (ci.colorTransfer == C.COLOR_TRANSFER_ST2084 || ci.colorTransfer == C.COLOR_TRANSFER_HLG);
+            boolean eightBit = ci != null && ci.lumaBitdepth == 8
+                    || androidx.media3.common.MimeTypes.VIDEO_H264.equals(f.sampleMimeType);
+            String what = plexMode ? "Plex item" : "Channel " + nums[index];
+            AppLog.i("Player", what + " video " + f.sampleMimeType + " " + f.width + "x" + f.height + " · " + color);
+            if (hdr && eightBit)
+                AppLog.w("Player", what + " is 8-bit video tagged as HDR: colors will look wrong. "
+                        + "Fix at the source (e.g. Tunarr: use HEVC 10-bit for 4K).");
+            return;
+        }
+    }
+
+    private void showError(String msg) {
+        error.setText(msg);
+        error.setVisibility(View.VISIBLE);
+        spinner.setVisibility(View.GONE);
+    }
+
+    /** "video (video/mpeg2) " when the stream has tracks of this type but none can be decoded, else "". */
+    private static String unsupported(Tracks tracks, int type, String label) {
+        if (!tracks.containsType(type) || tracks.isTypeSupported(type)) return "";
+        StringBuilder mimes = new StringBuilder();
+        for (Tracks.Group g : tracks.getGroups()) {
+            if (g.getType() != type) continue;
+            String m = g.getTrackFormat(0).sampleMimeType;
+            if (m != null && mimes.indexOf(m) < 0) mimes.append(mimes.length() > 0 ? ", " : "").append(m);
+        }
+        return label + (mimes.length() > 0 ? " (" + mimes + ")" : "") + " ";
+    }
+
+    private void tune(int i, boolean userAction) {
+        if (player == null) return;
+        if (userAction && i != index) previousIndex = index;
+        index = (i + nums.length) % nums.length;
+        if (userAction) retries = 0;
+        undecodable = false;
+        prefs.setLastChannel(nums[index]);
+        error.setVisibility(View.GONE);
+        spinner.setVisibility(View.VISIBLE); // tuning can take a few seconds (Tunarr longer)
+        tuneStartedAt = System.currentTimeMillis();
+        AppLog.i("Player", "Tune " + nums[index] + " " + names[index] + (userAction ? "" : " (retry)") + " · " + urls[index]);
+        // Free the old tuner before taking a new one, then record the new channel
+        // (http://<tuner>:5004/auto/v<channel>) into the timeshift buffer and play from that.
+        player.stop();
+        // A source that already needed VLC (e.g. MPEG-2 antenna channels on a tablet) goes straight to VLC.
+        if (vlcSources.contains(sourceOf(urls[index]))) ensureVlc(); else releaseVlc();
+        if (timeshift != null) timeshift.stop();
+        timeshift = new Timeshift(getCacheDir(), urls[index]);
+        playFrom(0);
+        setWantPlay(true);
+        showBanner();
+    }
+
+    /** Start playback at a byte offset in the timeshift buffer. */
+    private void playFrom(long offset) {
+        startTimeMs = timeshift.timeAt(offset);
+        if (vlc != null) {
+            try {
+                vlc.play(timeshift.httpUrl(offset), 0);
+            } catch (java.io.IOException e) {
+                AppLog.e("Player", "VLC: couldn't serve the buffer", e);
+                retryOrFail("VLC_BUFFER");
+            }
+            return;
+        }
+        player.setMediaSource(new ProgressiveMediaSource.Factory(timeshift.sourceFrom(offset))
+                .createMediaSource(MediaItem.fromUri(urls[index])));
+        player.prepare();
+    }
+
+    /** The moment of the broadcast currently on screen (wall-clock ms). */
+    private long streamTimeMs() {
+        return startTimeMs + posMs();
+    }
+
+    private long behindLiveMs() {
+        long b = System.currentTimeMillis() - streamTimeMs();
+        return b < LIVE_SLACK_MS ? 0 : b;
+    }
+
+    /** Rewind (negative) or skip ahead (positive) within the buffer; past the live point = go live. */
+    private void seekBy(long deltaMs) {
+        if ((player == null && vlc == null) || timeshift == null) return;
+        long oldest = timeshift.oldestTimeMs();
+        if (oldest < 0) return; // nothing recorded yet
+        long now = System.currentTimeMillis();
+        long target = Math.max(oldest, streamTimeMs() + deltaMs);
+        boolean play = wantPlay();
+        if (target >= now - LIVE_SLACK_MS) {
+            if (behindLiveMs() == 0) { showBanner(); return; } // already live
+            playFrom(timeshift.offsetAt(now - 1500));
+            play = true; // catching up to live always plays
+        } else {
+            playFrom(timeshift.offsetAt(target));
+        }
+        setWantPlay(play);
+        showBanner();
+    }
+
+    private void togglePause() {
+        if (player == null && vlc == null) return;
+        if (wantPlay()) {
+            setWantPlay(false);
+        } else {
+            // Paused longer than the buffer holds: the start has been dropped, so resume at the oldest part.
+            long oldest = timeshift != null ? timeshift.oldestTimeMs() : -1;
+            if (oldest >= 0 && streamTimeMs() < oldest + 1000) playFrom(timeshift.offsetAt(oldest + 2000));
+            setWantPlay(true);
+        }
+        showBanner();
+    }
+
+    private void lastChannel() {
+        if (previousIndex >= 0) tune(previousIndex, true);
+    }
+
+    private void showBanner() {
+        boolean paused = (player != null || vlc != null) && !wantPlay();
+        long behind = behindLiveMs();
+        bannerChannel.setText(nums[index] + "  ·  " + names[index] + "      "
+                + (paused ? "❚❚ PAUSED  ·  " : "")
+                + (behind > 0 ? fmt(behind) + " behind live" : "● LIVE"));
+        Channel ch = ChannelStore.get().byNumber(nums[index]);
+        long now = streamTimeMs() / 1000L; // what's on screen, which may be from a few minutes ago
+        Channel.Airing a = ch != null ? ch.now(now) : null;
+        Channel.Airing n = ch != null ? ch.next(now) : null;
+        boolean h24 = prefs.clock24h();
+        if (a != null) {
+            bannerTitle.setText(a.title);
+            String meta = Ui.range(a, h24) + "  ·  " + Ui.timeLeft(a, now);
+            if (n != null) meta += "      Next: " + n.title;
+            bannerMeta.setText(meta);
+            bannerProgress.setProgress(a.progress(now));
+            bannerProgress.setVisibility(View.VISIBLE);
+        } else {
+            bannerTitle.setText(names[index]);
+            bannerMeta.setText(Ui.clock(h24));
+            bannerProgress.setVisibility(View.INVISIBLE);
+        }
+        banner.animate().cancel();
+        banner.setAlpha(1f);
+        handler.removeCallbacks(hideBanner);
+        handler.removeCallbacks(bannerTick);
+        // While paused, keep the banner up and its "behind live" count ticking.
+        if (paused) handler.postDelayed(bannerTick, 1000);
+        else handler.postDelayed(hideBanner, 5000);
+    }
+
+    private void commitTypedChannel() {
+        String t = typed.toString();
+        typed.setLength(0);
+        entry.setVisibility(View.GONE);
+        if (t.isEmpty()) return;
+        for (int i = 0; i < nums.length; i++) {
+            if (nums[i].replaceAll("[^0-9]", "").equals(t) || nums[i].equals(t)) { tune(i, true); return; }
+        }
+        // No exact match: take the first channel whose major number matches ("5" -> 5.1).
+        for (int i = 0; i < nums.length; i++) {
+            if (nums[i].split("[.\\-]")[0].equals(t)) { tune(i, true); return; }
+        }
+        entry.setText(t + " ?");
+        entry.setVisibility(View.VISIBLE);
+        handler.postDelayed(() -> entry.setVisibility(View.GONE), 1200);
+    }
+
+    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (plexMode) return onPlexKey(keyCode) || super.onKeyDown(keyCode, event);
+        if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
+            if (typed.length() < 5) typed.append((char) ('0' + keyCode - KeyEvent.KEYCODE_0));
+            entry.setText(typed);
+            entry.setVisibility(View.VISIBLE);
+            handler.removeCallbacks(commitEntry);
+            handler.postDelayed(commitEntry, 1800);
+            return true;
+        }
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                showChannelGuide(); // pick a channel from the list instead of flipping blind
+                return true;
+            case KeyEvent.KEYCODE_CHANNEL_UP:
+            case KeyEvent.KEYCODE_PAGE_UP:
+                tune(index + 1, true);
+                return true;
+            case KeyEvent.KEYCODE_CHANNEL_DOWN:
+            case KeyEvent.KEYCODE_PAGE_DOWN:
+                tune(index - 1, true);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                // Tap = back 10 s (handled on key up); hold = previous channel.
+                if (event.getRepeatCount() == 0) { event.startTracking(); leftHeld = false; }
+                return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                seekBy(10_000);
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_REWIND:
+            case KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD:
+                seekBy(-30_000);
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+            case KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD:
+                seekBy(30_000);
+                return true;
+            case KeyEvent.KEYCODE_LAST_CHANNEL:
+                lastChannel();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+                if (typed.length() > 0) { handler.removeCallbacks(commitEntry); commitTypedChannel(); }
+                else togglePause();
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                togglePause();
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+                if (!wantPlay()) togglePause();
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                if (wantPlay()) togglePause();
+                return true;
+            case KeyEvent.KEYCODE_INFO:
+                if (banner.getAlpha() > 0.5f) hideBanner.run();
+                else showBanner();
+                return true;
+            case KeyEvent.KEYCODE_GUIDE:
+                finish(); // back to the home screen guide
+                return true;
+            default:
+                return super.onKeyDown(keyCode, event);
+        }
+    }
+
+    @Override public boolean onKeyLongPress(int keyCode, KeyEvent event) {
+        if (!plexMode && keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+            leftHeld = true;
+            lastChannel();
+            return true;
+        }
+        return super.onKeyLongPress(keyCode, event);
+    }
+
+    @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (!plexMode && keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+            if (!leftHeld && !event.isCanceled()) seekBy(-10_000);
+            leftHeld = false;
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+}

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 320x180 banner shown in system app lists. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <size android:width="320dp" android:height="180dp" />
+            <gradient android:angle="315" android:startColor="#FF0B0F17" android:endColor="#FF1E3A5F" />
+        </shape>
+    </item>
+    <item android:gravity="center" android:width="120dp" android:height="72dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="10dp" />
+            <stroke android:width="6dp" android:color="#FF4FC3F7" />
+        </shape>
+    </item>
+    <item android:gravity="center" android:width="28dp" android:height="28dp">
+        <shape android:shape="oval"><solid android:color="#FFE5A00D" /></shape>
+    </item>
+</layer-list>
