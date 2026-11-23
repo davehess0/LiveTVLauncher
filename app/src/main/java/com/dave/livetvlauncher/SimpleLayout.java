@@ -36,8 +36,7 @@ public final class SimpleLayout extends HomeLayout {
         clock.setGravity(Gravity.CENTER);
         clockRow.addView(clock);
         weather = weatherLabel(40);
-        weather.setPadding(dp(32), 0, 0, 0);
-        clockRow.addView(weather);
+        clockRow.addView(weather, Ui.margins(Ui.lp(-2, -2), dp(20), 0, 0, 0));
         root.addView(clockRow);
         date = Ui.text(c, 18, Ui.SUB, false);
         date.setGravity(Gravity.CENTER);

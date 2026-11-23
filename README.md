@@ -3,7 +3,7 @@
 A home screen built around live TV from your **HDHomeRun**, with **Plex Live TV** one press away.
 Your streaming apps (YouTube, Prime Video, Disney+, Plex) and your Plex movies sit right on the home screen too.
 No ads, no tracking. The app only talks to your HDHomeRun tuner, `api.hdhomerun.com` for guide data,
-your Tunarr server if you add one, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, and, if you link Plex, your Plex server and `plex.tv` for the one-time sign-in.
+your Tunarr server if you add one, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, and, if you link Plex, your Plex server and `plex.tv` for the one-time sign-in.
 
 ## The three layouts (switch any time in ⚙ Settings → Home screen layout)
 
@@ -71,6 +71,11 @@ Every layout can show the current weather next to the clock, for example ☁️ 
 - US locations use °F and most other places use °C.
 - Weather is off until you set a location. What you type is looked up once: US ZIP codes at [Zippopotam.us](https://zippopotam.us) and place names at Open-Meteo. After that, only the location's coordinates are sent to Open-Meteo.
 - Clear the field to turn weather off again.
+- **Forecast and radar:** select the temperature next to the clock (OK on the remote, or tap it) to open the weather screen.
+  - **10-day forecast:** highs, lows, conditions and chance of rain for each day.
+  - **Radar:** an animated loop of the last 2 hours of rain and snow on a dark map centered on your location.
+  - Left / Right switch tabs; Back closes.
+  - Radar comes from [RainViewer](https://www.rainviewer.com) and the map from Esri. Both are downloaded only while the Radar tab is open.
 
 ## Streaming apps and Plex movies
 
@@ -218,6 +223,7 @@ app/src/main/java/com/dave/livetvlauncher/
   HdhrClient         Tuner discovery, lineup.json, guide API
   TunarrClient       Tunarr lineup.json + XMLTV guide
   Weather            Current conditions for the clock (Open-Meteo)
+  WeatherActivity    10-day forecast + radar loop (RainViewer, Esri map)
   PhoneSetupServer   "Set up from your phone" web page + QR code
   CamerasActivity    RTSP security-camera grid / full screen
   AppLog / App       Daily log files (3 days, 1 MB/day) + crash logging

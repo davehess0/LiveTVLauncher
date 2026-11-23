@@ -107,8 +107,55 @@ final class Weather {
         return p;
     }
 
+    /** One day of the forecast. */
+    static final class Day {
+        java.util.Date date;
+        int code, high, low, rainChance;
+    }
+
+    /** 10-day forecast for the saved location. Network call: run off the main thread. */
+    static java.util.List<Day> forecast(Prefs p) throws Exception {
+        JSONObject d = new JSONObject(HdhrClient.get("https://api.open-meteo.com/v1/forecast?latitude=" + p.weatherLat()
+                + "&longitude=" + p.weatherLon()
+                + "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+                + "&forecast_days=10&timezone=auto" + (p.weatherFahrenheit() ? "&temperature_unit=fahrenheit" : "")))
+                .getJSONObject("daily");
+        JSONArray t = d.getJSONArray("time"), c = d.getJSONArray("weather_code"),
+                hi = d.getJSONArray("temperature_2m_max"), lo = d.getJSONArray("temperature_2m_min"),
+                rain = d.optJSONArray("precipitation_probability_max");
+        java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US);
+        java.util.List<Day> out = new java.util.ArrayList<>();
+        for (int i = 0; i < t.length(); i++) {
+            Day day = new Day();
+            day.date = f.parse(t.getString(i));
+            day.code = c.optInt(i, -1);
+            day.high = (int) Math.round(hi.optDouble(i, 0));
+            day.low = (int) Math.round(lo.optDouble(i, 0));
+            day.rainChance = rain != null ? rain.optInt(i, 0) : 0;
+            out.add(day);
+        }
+        return out;
+    }
+
+    /** Plain-words description of a WMO weather code. */
+    static String describe(int code) {
+        if (code == 0) return "Clear";
+        if (code == 1) return "Mostly clear";
+        if (code == 2) return "Partly cloudy";
+        if (code == 3) return "Cloudy";
+        if (code == 45 || code == 48) return "Fog";
+        if (code >= 51 && code <= 57) return "Drizzle";
+        if (code >= 61 && code <= 65) return "Rain";
+        if (code == 66 || code == 67) return "Freezing rain";
+        if (code >= 71 && code <= 77) return "Snow";
+        if (code >= 80 && code <= 82) return "Showers";
+        if (code == 85 || code == 86) return "Snow showers";
+        if (code >= 95) return "Thunderstorms";
+        return "";
+    }
+
     /** WMO weather code → emoji. */
-    private static String icon(int code, boolean day) {
+    static String icon(int code, boolean day) {
         if (code == 0) return day ? "☀️" : "🌙";
         if (code == 1 || code == 2) return day ? "🌤️" : "☁️";
         if (code == 3) return "☁️";

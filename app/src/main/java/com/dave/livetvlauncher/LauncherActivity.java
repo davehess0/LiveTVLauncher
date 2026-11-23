@@ -221,6 +221,14 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         startActivity(new Intent(this, AppsActivity.class));
     }
 
+    void openWeather() {
+        if (prefs.weatherLat().isEmpty()) {
+            Toast.makeText(this, "Set your ZIP code or city in Settings → Weather first.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        startActivity(new Intent(this, WeatherActivity.class));
+    }
+
     void openCameras() {
         startActivity(new Intent(this, CamerasActivity.class));
     }

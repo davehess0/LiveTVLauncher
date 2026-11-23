@@ -161,8 +161,16 @@ public abstract class HomeLayout {
     /** Label for the current weather, placed just before the clock. Hidden until weather is set up. */
     protected TextView weatherLabel(float sp) {
         TextView t = Ui.text(c, sp, Ui.TEXT, true);
-        t.setPadding(0, 0, dp(18), 0);
+        t.setPadding(dp(12), dp(4), dp(12), dp(4));
         t.setVisibility(View.GONE);
+        // Select (remote) or tap it for the 10-day forecast and radar.
+        t.setFocusable(true);
+        t.setClickable(true);
+        t.setOnClickListener(v -> host.openWeather());
+        t.setOnFocusChangeListener((v, has) -> {
+            v.setBackground(has ? Ui.rounded(Ui.TEXT, dp(18), 0, 0) : null);
+            ((TextView) v).setTextColor(has ? 0xFF000000 : Ui.TEXT);
+        });
         return t;
     }
 
