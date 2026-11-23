@@ -86,6 +86,33 @@ public final class WeatherActivity extends Activity {
         head.addView(now);
         root.addView(head);
 
+        // Active weather alerts (any severity): one coloured strip each; select one for the full text.
+        for (Weather.Alert a : Weather.get().alerts(prefs)) {
+            boolean light = a.severity.equals("Moderate") || a.severity.equals("Minor");
+            TextView s = Ui.text(this, 16, light ? 0xFF000000 : Ui.TEXT, true);
+            s.setText("⚠  " + a.event + "   " + a.until(prefs.clock24h()) + "   ·   OK for details");
+            s.setBackground(Ui.rounded(a.color(), Ui.dp(this, 12), 0, 0));
+            s.setPadding(Ui.dp(this, 16), Ui.dp(this, 10), Ui.dp(this, 16), Ui.dp(this, 10));
+            s.setFocusable(true);
+            s.setClickable(true);
+            s.setOnClickListener(v -> {
+                TextView t = Ui.text(this, 15, Ui.TEXT, false);
+                t.setSingleLine(false);
+                t.setText(a.headline + "\n\n" + a.description + (a.instruction.isEmpty() ? "" : "\n\nWHAT TO DO\n" + a.instruction)
+                        + "\n\nAreas: " + a.area);
+                int pp = Ui.dp(this, 24);
+                t.setPadding(pp, Ui.dp(this, 8), pp, pp);
+                android.widget.ScrollView sv = new android.widget.ScrollView(this);
+                sv.setFocusable(true);
+                sv.addView(t);
+                android.app.AlertDialog d = new android.app.AlertDialog.Builder(this)
+                        .setTitle("⚠  " + a.event).setView(sv).setPositiveButton("Close", null).show();
+                sv.post(sv::requestFocus);
+                if (d.getWindow() != null) d.getWindow().setLayout(Ui.dp(this, 900), Ui.dp(this, 520));
+            });
+            root.addView(s, Ui.margins(Ui.lp(-1, -2), 0, Ui.dp(this, 12), 0, 0));
+        }
+
         // Tabs.
         LinearLayout tabs = new LinearLayout(this);
         tabs.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 18));

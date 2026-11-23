@@ -106,6 +106,39 @@ public final class PlayerActivity extends Activity {
     private boolean plexFailed;  // built-in player couldn't play this Plex file: OK opens it in Plex instead
     private FrameLayout root;
 
+    // ---- Weather alerts while watching ----
+    private TextView alertBanner;
+    /** Alerts already shown as a banner in the player (until the app restarts). */
+    private static final java.util.Set<String> alertsShownInPlayer = new java.util.HashSet<>();
+    private final Runnable hideAlert = () -> alertBanner.animate().alpha(0f).setDuration(400)
+            .withEndAction(() -> alertBanner.setVisibility(View.GONE)).start();
+    /** Checks for new alerts every minute (the home screen isn't running its own checks meanwhile). */
+    private final Runnable alertCheck = new Runnable() {
+        @Override public void run() {
+            Weather.get().refreshAlertsIfStale(PlayerActivity.this, PlayerActivity.this::showAlertBanner);
+            showAlertBanner();
+            handler.postDelayed(this, 60_000L);
+        }
+    };
+
+    private void showAlertBanner() {
+        if (alertBanner == null || isFinishing()) return;
+        for (Weather.Alert a : Weather.get().undismissed(prefs)) {
+            if (!alertsShownInPlayer.add(a.id)) continue; // once per alert
+            AppLog.i("Weather", "Alert banner in player: " + a.event);
+            boolean light = a.severity.equals("Moderate") || a.severity.equals("Minor");
+            alertBanner.setTextColor(light ? 0xFF000000 : Ui.TEXT);
+            alertBanner.setBackground(Ui.rounded(a.color(), Ui.dp(this, 14), 0, 0));
+            alertBanner.setText("⚠  " + a.event + "  " + a.until(prefs.clock24h()) + "\nDetails on the home screen");
+            alertBanner.animate().cancel();
+            alertBanner.setAlpha(1f);
+            alertBanner.setVisibility(View.VISIBLE);
+            handler.removeCallbacks(hideAlert);
+            handler.postDelayed(hideAlert, 15_000L);
+            return; // one at a time
+        }
+    }
+
     // ---- VLC fallback: for video / audio this device can't decode itself ----
 
     /** VLC's engine while it's playing (null = the regular player is in use). */
@@ -276,6 +309,17 @@ public final class PlayerActivity extends Activity {
         spinner.setVisibility(View.GONE);
         int s = Ui.dp(this, 64);
         root.addView(spinner, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
+
+        // Weather alert banner across the top (doesn't interrupt; the full pop-up waits for the home screen).
+        alertBanner = Ui.text(this, 18, Ui.TEXT, true);
+        alertBanner.setSingleLine(false);
+        alertBanner.setMaxLines(2);
+        alertBanner.setGravity(Gravity.CENTER_VERTICAL);
+        alertBanner.setPadding(Ui.dp(this, 20), Ui.dp(this, 12), Ui.dp(this, 20), Ui.dp(this, 12));
+        alertBanner.setVisibility(View.GONE);
+        FrameLayout.LayoutParams alp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        alp.setMargins(Ui.dp(this, 120), Ui.dp(this, 24), Ui.dp(this, 120), 0);
+        root.addView(alertBanner, alp);
 
         buildTouchControls(root);
         if (!plexMode) buildChannelGuide(root);
@@ -623,6 +667,7 @@ public final class PlayerActivity extends Activity {
         });
         view.setPlayer(player);
         if (plexMode) startPlex(); else tune(index, true);
+        handler.postDelayed(alertCheck, 5000);
     }
 
     private void startPlex() {

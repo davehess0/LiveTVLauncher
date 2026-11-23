@@ -11,6 +11,8 @@ import android.text.InputType;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.List;
@@ -36,10 +38,81 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
             ChannelStore.get().refreshIfStale(LauncherActivity.this, REFRESH_MS);
             PlexStore.get().refreshIfStale(LauncherActivity.this, REFRESH_MS);
             Weather.get().refreshIfStale(LauncherActivity.this, weatherLoaded);
+            Weather.get().refreshAlertsIfStale(LauncherActivity.this, alertsChanged);
             handler.postDelayed(this, TICK_MS);
         }
     };
     private final Runnable weatherLoaded = () -> { if (current != null) current.tick(); };
+    private final Runnable alertsChanged = () -> { if (current != null) current.tick(); maybeShowAlert(); };
+
+    // ---- Weather alert pop-ups ----
+
+    /** Alerts put off with "Later" (until the app restarts). */
+    private static final java.util.Set<String> snoozedAlerts = new java.util.HashSet<>();
+    private android.app.AlertDialog alertDialog;
+
+    /** Shows the most serious alert that hasn't been dismissed, if any, while the home screen is in front. */
+    void maybeShowAlert() {
+        if (!resumed || isFinishing() || (alertDialog != null && alertDialog.isShowing())) return;
+        Weather.Alert a = null;
+        for (Weather.Alert x : Weather.get().undismissed(prefs)) if (!snoozedAlerts.contains(x.id)) { a = x; break; }
+        if (a == null) return;
+        final Weather.Alert alert = a;
+        AppLog.i("Weather", "Showing alert: " + a.event);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int p = Ui.dp(this, 24);
+        box.setPadding(p, Ui.dp(this, 8), p, 0);
+        TextView strip = Ui.text(this, 15, a.severity.equals("Moderate") || a.severity.equals("Minor") ? 0xFF000000 : Ui.TEXT, true);
+        strip.setText("  " + a.severity.toUpperCase(java.util.Locale.US) + "  ·  " + a.until(prefs.clock24h()));
+        strip.setBackground(Ui.rounded(a.color(), Ui.dp(this, 8), 0, 0));
+        strip.setPadding(Ui.dp(this, 10), Ui.dp(this, 6), Ui.dp(this, 10), Ui.dp(this, 6));
+        box.addView(strip, Ui.lp(-2, -2));
+        TextView body = Ui.text(this, 17, Ui.TEXT, false);
+        body.setSingleLine(false);
+        body.setText((a.headline.isEmpty() ? a.event : a.headline) + "\n\n" + a.area);
+        body.setPadding(0, Ui.dp(this, 14), 0, 0);
+        box.addView(body);
+        alertDialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("⚠  " + a.event)
+                .setView(box)
+                .setPositiveButton("Dismiss", (d, w) -> {
+                    prefs.dismissAlert(alert.id, alert.endsMs);
+                    AppLog.i("Weather", "Dismissed alert: " + alert.event);
+                    if (current != null) current.tick();
+                    content.post(this::maybeShowAlert); // the next one, if there is one
+                })
+                .setNeutralButton("Details", (d, w) -> showAlertDetails(alert))
+                .setNegativeButton("Later", (d, w) -> snoozedAlerts.add(alert.id))
+                .setOnCancelListener(d -> snoozedAlerts.add(alert.id)) // Back = later
+                .show();
+    }
+
+    private void showAlertDetails(Weather.Alert a) {
+        TextView t = Ui.text(this, 15, Ui.TEXT, false);
+        t.setSingleLine(false);
+        t.setText(a.description + (a.instruction.isEmpty() ? "" : "\n\nWHAT TO DO\n" + a.instruction)
+                + (a.sender.isEmpty() ? "" : "\n\n— " + a.sender));
+        int p = Ui.dp(this, 24);
+        t.setPadding(p, Ui.dp(this, 8), p, p);
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        sv.setFocusable(true); // Up / Down scroll with the remote
+        sv.addView(t);
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(this)
+                .setTitle("⚠  " + a.event + "  " + a.until(prefs.clock24h()))
+                .setView(sv)
+                .setPositiveButton("Dismiss", (x, w) -> {
+                    prefs.dismissAlert(a.id, a.endsMs);
+                    if (current != null) current.tick();
+                    content.post(this::maybeShowAlert);
+                })
+                .setNegativeButton("Close", (x, w) -> snoozedAlerts.add(a.id))
+                .setOnCancelListener(x -> snoozedAlerts.add(a.id))
+                .show();
+        alertDialog = d;
+        sv.post(sv::requestFocus);
+        if (d.getWindow() != null) d.getWindow().setLayout(Ui.dp(this, 900), Ui.dp(this, 520));
+    }
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -89,6 +162,8 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         // Plex refreshes more often so Continue Watching reflects what you just watched.
         PlexStore.get().refreshIfStale(this, 60_000L);
         Weather.get().refreshIfStale(this, weatherLoaded);
+        Weather.get().refreshAlertsIfStale(this, alertsChanged);
+        content.post(this::maybeShowAlert); // an alert that arrived while another screen was open
         handler.removeCallbacks(ticker);
         handler.postDelayed(ticker, TICK_MS);
     }

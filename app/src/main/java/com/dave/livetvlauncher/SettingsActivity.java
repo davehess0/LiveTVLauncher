@@ -110,6 +110,10 @@ public final class SettingsActivity extends Activity {
             prefs.setClock24h(!prefs.clock24h());
             render();
         });
+        row("Weather alerts", prefs.weatherAlerts() ? "Pop up (US · National Weather Service)" : "Off", v -> {
+            prefs.setWeatherAlerts(!prefs.weatherAlerts());
+            render();
+        });
         row("Weather", prefs.weatherLat().isEmpty() ? "Off · click to set your ZIP code or city"
                 : prefs.weatherPlace() + (prefs.weatherFahrenheit() ? " · °F" : " · °C"), v -> askWeather());
         row("Settings PIN", prefs.pin().isEmpty() ? "Off" : "On", v -> askPin());
@@ -125,7 +129,7 @@ public final class SettingsActivity extends Activity {
         about.setPadding(0, Ui.dp(this, 24), 0, 0);
         about.setText("Live TV Home 1.0 — no ads, no tracking, no accounts.\n"
                 + "Only talks to your HDHomeRun, api.hdhomerun.com (guide data), your Tunarr server if you add one, "
-                + "Open-Meteo if you turn on weather (RainViewer and Esri maps for the radar), and — if you link it — your Plex server and plex.tv (sign-in).");
+                + "Open-Meteo if you turn on weather (RainViewer and Esri maps for the radar, weather.gov for alerts), and — if you link it — your Plex server and plex.tv (sign-in).");
         list.addView(about);
         View target = keep != null ? list.findViewWithTag(keep) : null;
         if (target == null) target = list.getChildAt(1); // first row

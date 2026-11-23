@@ -31,6 +31,33 @@ public final class Prefs {
     public String tunerIp() { return sp.getString("tunerIp", ""); }
     public void setTunerIp(String v) { sp.edit().putString("tunerIp", v == null ? "" : v.trim()).apply(); }
 
+    /** Pop-up weather alerts (US, National Weather Service). */
+    public boolean weatherAlerts() { return sp.getBoolean("weatherAlerts", true); }
+    public void setWeatherAlerts(boolean v) { sp.edit().putBoolean("weatherAlerts", v).apply(); }
+
+    /** IDs of alerts the user dismissed (kept until they've expired, then pruned). */
+    public java.util.Set<String> dismissedAlerts() {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        long now = System.currentTimeMillis();
+        for (String s : sp.getStringSet("dismissedAlerts", java.util.Collections.emptySet())) {
+            int bar = s.lastIndexOf('|');
+            long until = bar > 0 ? Long.parseLong(s.substring(bar + 1)) : 0;
+            if (until == 0 || until > now) ids.add(bar > 0 ? s.substring(0, bar) : s);
+        }
+        return ids;
+    }
+    public void dismissAlert(String id, long untilMs) {
+        java.util.Set<String> keep = new java.util.HashSet<>();
+        long now = System.currentTimeMillis();
+        for (String s : sp.getStringSet("dismissedAlerts", java.util.Collections.emptySet())) {
+            int bar = s.lastIndexOf('|');
+            long until = bar > 0 ? Long.parseLong(s.substring(bar + 1)) : 0;
+            if (until > now) keep.add(s); // prune expired ones
+        }
+        keep.add(id + "|" + (untilMs > 0 ? untilMs : now + 24 * 3600_000L));
+        sp.edit().putStringSet("dismissedAlerts", keep).apply();
+    }
+
     /** Muted live video of the selected channel in the Guide's preview panel (uses a tuner while shown). */
     public boolean livePreview() { return sp.getBoolean("livePreview", true); }
     public void setLivePreview(boolean v) { sp.edit().putBoolean("livePreview", v).apply(); }

@@ -176,6 +176,8 @@ public abstract class HomeLayout {
 
     protected void showWeather(TextView label) {
         String w = Weather.get().text(prefs);
+        // ⚠ in front of the temperature while a weather alert is active (select it for details).
+        if (!w.isEmpty() && !Weather.get().alerts(prefs).isEmpty()) w = "⚠️ " + w;
         label.setText(w);
         label.setVisibility(w.isEmpty() ? View.GONE : View.VISIBLE);
     }

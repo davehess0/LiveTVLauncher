@@ -3,7 +3,7 @@
 A home screen built around live TV from your **HDHomeRun**, with **Plex Live TV** one press away.
 Your streaming apps (YouTube, Prime Video, Disney+, Plex) and your Plex movies sit right on the home screen too.
 No ads, no tracking. The app only talks to your HDHomeRun tuner, `api.hdhomerun.com` for guide data,
-your Tunarr server if you add one, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, and, if you link Plex, your Plex server and `plex.tv` for the one-time sign-in.
+your Tunarr server if you add one, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, and, if you link Plex, your Plex server and `plex.tv` for the one-time sign-in.
 
 ## The three layouts (switch any time in ⚙ Settings → Home screen layout)
 
@@ -76,6 +76,12 @@ Every layout can show the current weather next to the clock, for example ☁️ 
   - **Radar:** an animated loop of the last 2 hours of rain and snow on a dark map centered on your location.
   - Left / Right switch tabs; Back closes.
   - Radar comes from [RainViewer](https://www.rainviewer.com) and the map from Esri. Both are downloaded only while the Radar tab is open.
+- **Weather alerts (US):** the launcher checks the [National Weather Service](https://www.weather.gov) every 5 minutes for watches, warnings and advisories at your location.
+  - **On the home screen:** a pop-up shows the alert, how serious it is, how long it lasts and the areas covered. **Dismiss** hides it for good. **Details** shows the full NWS text and what to do. **Later** (or Back) hides it until the app restarts.
+  - **While watching TV:** a colored banner appears across the top for 15 seconds, without interrupting the show.
+  - **Minor advisories** don't pop up; they only appear in the weather screen.
+  - **⚠ next to the temperature** means an alert is active. Select it to see every alert at the top of the weather screen.
+  - To turn alerts off, go to ⚙ Settings → **Weather alerts** → Off. Outside the US there are no alerts.
 
 ## Streaming apps and Plex movies
 

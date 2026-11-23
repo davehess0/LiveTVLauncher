@@ -8,6 +8,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.net.URLEncoder;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -105,6 +106,128 @@ final class Weather {
         // Fahrenheit where it's the everyday unit.
         p.fahrenheit = cc.equals("US") || cc.equals("LR") || cc.equals("FM") || cc.equals("MH") || cc.equals("PW") || cc.equals("KY") || cc.equals("BS") || cc.equals("BZ");
         return p;
+    }
+
+    // ---- Weather alerts (US: National Weather Service) ----
+
+    /** One active watch / warning / advisory for the saved location. */
+    static final class Alert {
+        String id = "", event = "", headline = "", area = "", description = "", instruction = "", severity = "", sender = "";
+        long endsMs;
+
+        /** Watches, warnings and moderate advisories pop up; minor advisories only show in the weather screen. */
+        boolean popsUp() {
+            return severity.equals("Extreme") || severity.equals("Severe") || severity.equals("Moderate");
+        }
+
+        int color() {
+            switch (severity) {
+                case "Extreme": case "Severe": return 0xFFD32F2F;
+                case "Moderate": return 0xFFEF6C00;
+                default: return 0xFFF9A825;
+            }
+        }
+
+        String until(boolean h24) {
+            if (endsMs <= 0) return "";
+            return "until " + new java.text.SimpleDateFormat(h24 ? "EEE HH:mm" : "EEE h:mm a", Locale.getDefault()).format(new java.util.Date(endsMs));
+        }
+    }
+
+    private static final long ALERTS_MAX_AGE_MS = 5 * 60_000L;
+    private volatile List<Alert> alerts = java.util.Collections.emptyList();
+    private volatile String alertsKey = "";
+    private volatile long alertsAt;
+    private volatile boolean alertsLoading;
+
+    /** Active alerts for the saved location, most serious first (empty if weather is off). */
+    List<Alert> alerts(Prefs p) {
+        if (p.weatherLat().isEmpty() || !p.weatherAlerts() || !alertsKey.equals(p.weatherLat() + "," + p.weatherLon())) return java.util.Collections.emptyList();
+        long now = System.currentTimeMillis();
+        List<Alert> out = new java.util.ArrayList<>();
+        for (Alert a : alerts) if (a.endsMs <= 0 || a.endsMs > now) out.add(a);
+        return out;
+    }
+
+    /** Alerts that should pop up and haven't been dismissed. */
+    List<Alert> undismissed(Prefs p) {
+        List<Alert> out = new java.util.ArrayList<>();
+        java.util.Set<String> gone = p.dismissedAlerts();
+        for (Alert a : alerts(p)) if (a.popsUp() && !gone.contains(a.id)) out.add(a);
+        return out;
+    }
+
+    /** Check the National Weather Service for alerts every 5 minutes; onDone runs on the main thread. */
+    void refreshAlertsIfStale(Context ctx, Runnable onDone) {
+        Prefs p = new Prefs(ctx);
+        if (p.weatherLat().isEmpty() || !p.weatherAlerts() || alertsLoading) return;
+        String key = p.weatherLat() + "," + p.weatherLon();
+        if (key.equals(alertsKey) && System.currentTimeMillis() - alertsAt < ALERTS_MAX_AGE_MS) return;
+        alertsLoading = true;
+        io.execute(() -> {
+            try {
+                alerts = fetchAlerts(p.weatherLat(), p.weatherLon());
+                alertsKey = key;
+                if (!alerts.isEmpty()) {
+                    StringBuilder s = new StringBuilder();
+                    for (Alert a : alerts) s.append(s.length() > 0 ? ", " : "").append(a.event);
+                    AppLog.i("Weather", "Active alerts: " + s);
+                }
+            } catch (Exception e) {
+                AppLog.w("Weather", "Alerts check failed (" + e.getClass().getSimpleName() + ")");
+            } finally {
+                alertsAt = System.currentTimeMillis(); // also after a failure: try again in 5 min
+                alertsLoading = false;
+                if (onDone != null) main.post(onDone);
+            }
+        });
+    }
+
+    private static List<Alert> fetchAlerts(String lat, String lon) throws Exception {
+        java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(
+                "https://api.weather.gov/alerts/active?point=" + lat + "," + lon).openConnection();
+        c.setConnectTimeout(6000);
+        c.setReadTimeout(12000);
+        c.setRequestProperty("User-Agent", "LiveTVHome/1.0 (Android TV launcher)"); // the NWS asks for one
+        c.setRequestProperty("Accept", "application/geo+json");
+        try {
+            int code = c.getResponseCode();
+            if (code == 400 || code == 404) return java.util.Collections.emptyList(); // outside the US
+            if (code != 200) throw new java.io.IOException("HTTP " + code);
+            String body;
+            try (java.io.InputStream in = c.getInputStream()) {
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[16384];
+                for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+                body = out.toString("UTF-8");
+            }
+            JSONArray features = new JSONObject(body).optJSONArray("features");
+            java.text.SimpleDateFormat iso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US);
+            List<Alert> list = new java.util.ArrayList<>();
+            for (int i = 0; features != null && i < features.length(); i++) {
+                JSONObject pr = features.getJSONObject(i).getJSONObject("properties");
+                if (!"Actual".equals(pr.optString("status"))) continue; // skip tests / exercises
+                if ("Cancel".equals(pr.optString("messageType"))) continue;
+                Alert a = new Alert();
+                a.id = pr.optString("id");
+                a.event = pr.optString("event");
+                a.headline = pr.optString("headline");
+                a.area = pr.optString("areaDesc");
+                a.description = pr.optString("description").trim();
+                a.instruction = pr.isNull("instruction") ? "" : pr.optString("instruction").trim();
+                a.severity = pr.optString("severity");
+                a.sender = pr.optString("senderName");
+                String ends = pr.isNull("ends") ? pr.optString("expires") : pr.optString("ends");
+                try { a.endsMs = iso.parse(ends).getTime(); } catch (Exception ignored) { }
+                list.add(a);
+            }
+            java.util.List<String> order = java.util.Arrays.asList("Extreme", "Severe", "Moderate", "Minor", "Unknown");
+            list.sort((x, y) -> Integer.compare(order.indexOf(x.severity) < 0 ? 9 : order.indexOf(x.severity),
+                    order.indexOf(y.severity) < 0 ? 9 : order.indexOf(y.severity)));
+            return list;
+        } finally {
+            c.disconnect();
+        }
     }
 
     /** One day of the forecast. */
