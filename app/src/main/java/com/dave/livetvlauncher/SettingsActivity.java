@@ -70,6 +70,7 @@ public final class SettingsActivity extends Activity {
 
         group("HDHomeRun", (prefs.tunerIp().isEmpty() ? "Automatic" : prefs.tunerIp())
                 + (prefs.favoritesOnly() ? " · Favorites only" : " · All channels"), () -> {
+            row("Find HDHomeRun on the network", "Search and pick your tuner", v -> findTuners());
             row("HDHomeRun address", prefs.tunerIp().isEmpty() ? "Automatic" : prefs.tunerIp(), v -> askTunerIp());
             row("Channels shown", prefs.favoritesOnly() ? "Favorites only (set in the HDHomeRun app)" : "All channels", v -> {
                 prefs.setFavoritesOnly(!prefs.favoritesOnly());
@@ -164,6 +165,57 @@ public final class SettingsActivity extends Activity {
         r.setOnClickListener(click);
         // Rows inside an open group are indented under their heading.
         list.addView(r, Ui.margins(Ui.lp(-1, -2), inGroup ? Ui.dp(this, 40) : 0, 0, 0, Ui.dp(this, 10)));
+    }
+
+    /** Search the network for HDHomeRun tuners and let the user pick one (or Automatic). */
+    private void findTuners() {
+        AlertDialog searching = new AlertDialog.Builder(this)
+                .setTitle("Looking for HDHomeRun tuners…")
+                .setMessage("Searching your home network. This takes a couple of seconds.")
+                .setNegativeButton("Cancel", null)
+                .show();
+        net.execute(() -> {
+            java.util.List<HdhrClient.Found> found = HdhrClient.findTuners(prefs.tunerIp());
+            ui.post(() -> {
+                if (!searching.isShowing()) return; // cancelled
+                searching.dismiss();
+                showTunerChoices(found);
+            });
+        });
+    }
+
+    private void showTunerChoices(java.util.List<HdhrClient.Found> found) {
+        String current = prefs.tunerIp();
+        java.util.List<CharSequence> items = new java.util.ArrayList<>();
+        for (HdhrClient.Found f : found) {
+            boolean selected = f.ip.equals(current);
+            items.add((selected ? "✓  " : "") + f.label() + "\n" + f.detail());
+        }
+        items.add((current.isEmpty() ? "✓  " : "") + "Automatic\nFind the tuner by itself each time");
+        items.add("Enter an address…");
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle(found.isEmpty() ? "No HDHomeRun found" : found.size() == 1 ? "Found 1 HDHomeRun" : "Found " + found.size() + " HDHomeRun tuners")
+                .setItems(items.toArray(new CharSequence[0]), (d, which) -> {
+                    if (which < found.size()) {
+                        HdhrClient.Found f = found.get(which);
+                        prefs.setTunerIp(f.ip);
+                        AppLog.i("Channels", "HDHomeRun chosen: " + f.label() + " at " + f.ip);
+                        Toast.makeText(this, "Using " + f.label() + " at " + f.ip, Toast.LENGTH_SHORT).show();
+                        ChannelStore.get().refresh(this);
+                        render();
+                    } else if (which == found.size()) {
+                        prefs.setTunerIp("");
+                        ChannelStore.get().refresh(this);
+                        render();
+                    } else {
+                        askTunerIp();
+                    }
+                })
+                .setNegativeButton("Cancel", null);
+        if (found.isEmpty()) b.setMessage(null);
+        b.show();
+        if (found.isEmpty())
+            Toast.makeText(this, "Check the tuner is powered on and on the same network, or enter its address.", Toast.LENGTH_LONG).show();
     }
 
     private void askTunerIp() {

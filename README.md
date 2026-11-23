@@ -26,7 +26,8 @@ All of the colors are in `Ui.java` if you want to tune them.
 ## Set up from your phone
 
 Typing addresses with a remote is slow. Instead, go to ⚙ Settings → **Set up from your phone** and scan the QR code with your phone's camera. A settings page opens on your phone, where you can:
-- set the **HDHomeRun**, **Tunarr** and **Plex server** addresses
+- find your **HDHomeRun** on the network and pick it, or type its address
+- set the **Tunarr** and **Plex server** addresses
 - set the **weather** location
 - **add or remove cameras** (passwords are masked)
 
@@ -199,6 +200,7 @@ Do these steps from the **main (owner) profile**. The restricted profile's PIN a
   - If the HDHomeRun or Tunarr can't be reached, it tries again after 30 seconds, then 1 minute, then 2, then every 5 minutes until it's back. You don't need to do anything.
   - While a source is down, its last known channels stay in the list.
   - If the saved HDHomeRun address stops answering (for example, your router gave the tuner a new address), the launcher looks for the tuner on your network automatically.
+- **Finding your tuner:** go to ⚙ Settings → HDHomeRun → **Find HDHomeRun on the network**. It searches your network, the same way HDHomeRun's own apps do, and lists every tuner it finds with its name, model, address and tuner count. Pick one to use it, or choose *Automatic*. The phone setup page has the same **Find HDHomeRun** button.
 - **"Can't reach HDHomeRun"**: if it doesn't clear up on its own, set the tuner's IP in ⚙ Settings → HDHomeRun → HDHomeRun address. You can find it at `my.hdhomerun.com` or in your router. Reserving that address for the tuner in your router keeps it from changing.
 - **"no guide data"**: the guide needs *Sync with guide server* enabled on the tuner, which it is by default. Channels still play without a guide.
 - **A channel won't play**: all tuners may be busy with other TVs or recordings. Copy-protected cable channels are hidden automatically.

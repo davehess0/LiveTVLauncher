@@ -149,6 +149,66 @@ public final class HdhrClient {
      * HDHomeRun local discovery: broadcast a "who's there?" packet on UDP 65001 and collect the
      * addresses of tuners that answer within about 1.5 s. Returns an empty list on any error.
      */
+    /** One HDHomeRun found on the network, for the "Find HDHomeRun" pick list. */
+    static final class Found {
+        String ip, name, model, deviceId;
+        int tuners;
+
+        String label() {
+            return (name.isEmpty() ? "HDHomeRun" : name) + (model.isEmpty() ? "" : " (" + model + ")");
+        }
+
+        String detail() {
+            return ip + (tuners > 0 ? " · " + tuners + (tuners == 1 ? " tuner" : " tuners") : "")
+                    + (deviceId.isEmpty() ? "" : " · ID " + deviceId);
+        }
+    }
+
+    /**
+     * Every HDHomeRun tuner on the home network, with its name and model. Local broadcast first,
+     * then HDHomeRun's cloud list. Network work: call off the main thread (takes ~2 s).
+     */
+    static List<Found> findTuners(String savedIp) {
+        java.util.LinkedHashSet<String> ips = new java.util.LinkedHashSet<>(broadcastDiscover());
+        // The saved address too, so the current tuner shows up even where broadcasts are blocked.
+        if (savedIp != null && !savedIp.trim().isEmpty()) ips.add(savedIp.trim().replaceAll("^https?://", "").replaceAll("/.*$", ""));
+        for (String api : new String[]{"http://ipv4-api.hdhomerun.com/discover", "https://api.hdhomerun.com/discover"}) {
+            try {
+                JSONArray devices = new JSONArray(get(api));
+                for (int i = 0; i < devices.length(); i++) {
+                    JSONObject d = devices.getJSONObject(i);
+                    if (!d.has("LineupURL")) continue; // DVR storage engines aren't tuners
+                    String ip = d.optString("LocalIP", "");
+                    if (ip.isEmpty()) ip = android.net.Uri.parse(d.optString("DiscoverURL", "")).getHost();
+                    if (ip != null && !ip.isEmpty()) ips.add(ip);
+                }
+                break;
+            } catch (Exception ignored) {
+                // offline or moved: the local search is what matters
+            }
+        }
+        List<Found> out = new ArrayList<>();
+        for (String ip : ips) {
+            Found f = new Found();
+            f.ip = ip;
+            f.name = ""; f.model = ""; f.deviceId = "";
+            try {
+                JSONObject d = new JSONObject(get("http://" + ip + "/discover.json"));
+                if (!d.has("LineupURL")) continue;
+                f.name = d.optString("FriendlyName", "");
+                f.model = d.optString("ModelNumber", "");
+                f.deviceId = d.optString("DeviceID", "");
+                f.tuners = d.optInt("TunerCount", 0);
+            } catch (Exception e) {
+                continue; // answered the broadcast but not over HTTP: skip it
+            }
+            out.add(f);
+        }
+        AppLog.i("Channels", "HDHomeRun search found " + out.size() + (out.size() == 1 ? " tuner" : " tuners")
+                + (out.isEmpty() ? "" : ": " + ips));
+        return out;
+    }
+
     static List<String> broadcastDiscover() {
         List<String> found = new ArrayList<>();
         try (java.net.DatagramSocket s = new java.net.DatagramSocket()) {

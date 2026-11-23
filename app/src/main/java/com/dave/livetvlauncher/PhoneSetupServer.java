@@ -38,6 +38,8 @@ final class PhoneSetupServer {
     private final String key;
     private ServerSocket server;
     private volatile boolean running;
+    /** Tuners from the last "Find HDHomeRun" on the phone page. */
+    private volatile List<HdhrClient.Found> lastFound = java.util.Collections.emptyList();
 
     PhoneSetupServer(Context ctx, Runnable onChanged) {
         app = ctx.getApplicationContext();
@@ -191,6 +193,23 @@ final class PhoneSetupServer {
                 changed(sourcesChanged);
                 return "Saved." + weatherMsg + (sourcesChanged ? " Channels are reloading on the TV." : "");
             }
+            case "/find": {
+                lastFound = HdhrClient.findTuners(prefs.tunerIp());
+                return lastFound.isEmpty() ? "No HDHomeRun found. Check it's on and on the same network, or type its address below."
+                        : "Found " + lastFound.size() + (lastFound.size() == 1 ? " tuner" : " tuners") + ". Tap Use to pick one.";
+            }
+            case "/usetuner": {
+                String ip = clean(f.get("ip"));
+                for (HdhrClient.Found t : lastFound) {
+                    if (t.ip.equals(ip)) {
+                        prefs.setTunerIp(ip);
+                        AppLog.i("PhoneSetup", "HDHomeRun chosen from phone: " + t.label() + " at " + ip);
+                        changed(true);
+                        return "Using " + esc(t.label()) + " at " + esc(ip) + ". Channels are reloading on the TV.";
+                    }
+                }
+                return "Search again, then tap Use.";
+            }
             case "/camera/add": {
                 String name = clean(f.get("name")), url = clean(f.get("url"));
                 if (url.isEmpty()) return "Enter the camera's stream address.";
@@ -238,6 +257,19 @@ final class PhoneSetupServer {
         StringBuilder b = new StringBuilder();
         if (!notice.isEmpty()) b.append("<div class=note>").append(notice).append("</div>");
         String k = esc(key);
+        // HDHomeRun search: lists tuners found on the network with a "Use" button each.
+        b.append("<h2>HDHomeRun</h2>");
+        for (HdhrClient.Found t : lastFound) {
+            boolean using = t.ip.equals(prefs.tunerIp());
+            b.append("<form method=post action='/usetuner' class=cam><input type=hidden name=k value='").append(k)
+             .append("'><input type=hidden name=ip value='").append(esc(t.ip)).append("'><div><b>").append(esc(t.label()))
+             .append("</b><br><span class=dim>").append(esc(t.detail())).append("</span></div>")
+             .append(using ? "<span class=dim>In use</span>" : "<button class=small>Use</button>").append("</form>");
+        }
+        b.append("<form method=post action='/find'><input type=hidden name=k value='").append(k)
+         .append("'><button class=secondary>Find HDHomeRun on the network</button></form>");
+
+        b.append("<h2>Addresses</h2>");
         b.append("<form method=post action='/save'><input type=hidden name=k value='").append(k).append("'>")
          .append(field("HDHomeRun address", "tuner", prefs.tunerIp(), "e.g. 192.168.1.50 — blank = find it automatically"))
          .append(field("Tunarr server", "tunarr", prefs.tunarrUrl(), "e.g. http://192.168.1.50:8000 — blank = off"))
@@ -277,6 +309,7 @@ final class PhoneSetupServer {
                 + "input{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:13px 12px;font-size:16px;border-radius:10px;border:1px solid #3a3a3c;background:#1c1c1e;color:#fff}"
                 + "button{margin-top:18px;width:100%;padding:14px;font-size:16px;font-weight:600;border:0;border-radius:12px;background:#0a84ff;color:#fff}"
                 + "button.small{width:auto;margin:0;padding:9px 14px;background:#3a3a3c;font-size:14px}"
+                + "button.secondary{background:#2c2c2e;margin-top:8px}"
                 + ".cam{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#1c1c1e;border-radius:12px;margin:8px 0;word-break:break-all}"
                 + ".dim{color:#8e8e93;font-size:13px}.note{background:#1f3a26;color:#d1f7d9;padding:12px;border-radius:10px;margin-bottom:8px}"
                 + "</style></head><body><h1>" + esc(title) + "</h1>" + body + "</body></html>";
