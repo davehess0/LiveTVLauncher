@@ -32,6 +32,12 @@ public abstract class HomeLayout {
     /** Called every 30 s to move clocks and progress bars. */
     public abstract void tick();
 
+    /** Another screen is coming to the front (or this layout is being replaced): stop live previews. */
+    public void onHidden() { }
+
+    /** This layout is on screen again. */
+    public void onShown() { }
+
     /** Back from watching TV: select / show the channel that was playing last. */
     public void showLastWatched() { tick(); }
 

@@ -84,6 +84,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
             HomeLayout l = current;
             content.post(l::showLastWatched);
         }
+        if (current != null) current.onShown();
         ChannelStore.get().refreshIfStale(this, REFRESH_MS);
         // Plex refreshes more often so Continue Watching reflects what you just watched.
         PlexStore.get().refreshIfStale(this, 60_000L);
@@ -94,6 +95,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
 
     @Override protected void onPause() {
         resumed = false;
+        if (current != null) current.onHidden();
         handler.removeCallbacks(ticker);
         super.onPause();
     }
@@ -150,10 +152,11 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
 
     private String signature() {
         return prefs.pinnedApps() + "|" + prefs.layout() + "|" + prefs.showAppRow() + "|" + prefs.favoritesOnly() + "|" + prefs.clock24h() + "|" + guideOverlay
-                + "|" + prefs.cameras().isEmpty();
+                + "|" + prefs.cameras().isEmpty() + "|" + prefs.livePreview();
     }
 
     private void rebuild() {
+        if (current != null) current.onHidden(); // the old layout's preview (if any) lets go of its tuner
         content.removeAllViews();
         if (guideOverlay) current = new GuideLayout(this, true);
         else switch (prefs.layout()) {
@@ -192,6 +195,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     // ---- actions used by the layouts --------------------------------------------------------
 
     void play(Channel ch) {
+        if (current != null) current.onHidden(); // free the preview's tuner before the player takes one
         returningFromPlayer = true;
         Apps.play(this, ch, visibleChannels());
     }

@@ -31,6 +31,10 @@ public final class Prefs {
     public String tunerIp() { return sp.getString("tunerIp", ""); }
     public void setTunerIp(String v) { sp.edit().putString("tunerIp", v == null ? "" : v.trim()).apply(); }
 
+    /** Muted live video of the selected channel in the Guide's preview panel (uses a tuner while shown). */
+    public boolean livePreview() { return sp.getBoolean("livePreview", true); }
+    public void setLivePreview(boolean v) { sp.edit().putBoolean("livePreview", v).apply(); }
+
     /** When the app starts (or the device boots), go straight to the last channel watched. */
     public boolean startOnLastChannel() { return sp.getBoolean("startOnLastChannel", true); }
     public void setStartOnLastChannel(boolean v) { sp.edit().putBoolean("startOnLastChannel", v).apply(); }

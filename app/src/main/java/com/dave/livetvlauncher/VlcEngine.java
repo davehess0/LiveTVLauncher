@@ -59,6 +59,9 @@ final class VlcEngine {
         mp.play();
     }
 
+    /** Silence (for previews). */
+    void setMuted(boolean muted) { mp.setVolume(muted ? 0 : 100); }
+
     boolean wantPlay() { return wantPlay; }
     void setWantPlay(boolean play) {
         wantPlay = play;

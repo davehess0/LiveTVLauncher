@@ -53,6 +53,10 @@ public final class SettingsActivity extends Activity {
                     : Prefs.LAYOUT_WALL.equals(l) ? Prefs.LAYOUT_SIMPLE : Prefs.LAYOUT_GUIDE);
             render();
         });
+        row("Live preview in the guide", prefs.livePreview() ? "On (uses a tuner while showing)" : "Off", v -> {
+            prefs.setLivePreview(!prefs.livePreview());
+            render();
+        });
         row("When the app opens", prefs.startOnLastChannel() ? "Play the last channel" : "Show the home screen", v -> {
             prefs.setStartOnLastChannel(!prefs.startOnLastChannel());
             render();

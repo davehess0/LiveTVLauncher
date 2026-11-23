@@ -14,7 +14,94 @@ import java.util.List;
  * what's on the focused channel; below it, every channel with now / next and a progress bar.
  * Press OK on a channel to start watching.
  */
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class GuideLayout extends HomeLayout {
+
+    // ---- Live preview of the selected channel (muted, in the preview panel) ----
+
+    private android.widget.FrameLayout previewBox;
+    private androidx.media3.ui.PlayerView previewView;
+    private androidx.media3.exoplayer.ExoPlayer previewPlayer;
+    private VlcEngine previewVlc;
+    private Channel previewCh;        // channel being previewed (or about to be)
+    private boolean visible = true;   // false while another screen is in front
+    private static final long PREVIEW_DELAY_MS = 1200; // settle on a channel this long before tuning
+    private final Runnable startPreview = this::startPreview;
+
+    /** Preview the channel after a short pause, so scrolling through the list doesn't grab tuners. */
+    private void schedulePreview(Channel ch) {
+        stopPreview();
+        if (ch == null || !prefs.livePreview() || !visible || ch.streamUrl.isEmpty()) return;
+        previewCh = ch;
+        previewBox.postDelayed(startPreview, PREVIEW_DELAY_MS);
+    }
+
+    private void startPreview() {
+        Channel ch = previewCh;
+        if (ch == null || !visible) return;
+        previewPlayer = new androidx.media3.exoplayer.ExoPlayer.Builder(c).build();
+        previewPlayer.setVolume(0f);
+        previewPlayer.addListener(new androidx.media3.common.Player.Listener() {
+            @Override public void onTracksChanged(androidx.media3.common.Tracks t) {
+                // No decoder for this video here (e.g. MPEG-2 on a tablet): preview with VLC instead.
+                if (t.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)
+                        && !t.isTypeSupported(androidx.media3.common.C.TRACK_TYPE_VIDEO) && previewCh == ch) {
+                    releaseExoPreview();
+                    previewVlc = new VlcEngine(c, previewBox, 1, new VlcEngine.Listener() {
+                        @Override public void onPlaying() { if (previewCh == ch) heroLogoSlot.setVisibility(View.INVISIBLE); }
+                        @Override public void onBuffering(boolean b) { }
+                        @Override public void onError(String why) { stopPreview(); }
+                        @Override public void onEnded() { stopPreview(); }
+                    });
+                    previewVlc.setMuted(true);
+                    previewVlc.play(ch.streamUrl, 0);
+                }
+            }
+            @Override public void onPlaybackStateChanged(int state) {
+                if (state == androidx.media3.common.Player.STATE_READY && previewCh == ch) {
+                    previewView.setVisibility(View.VISIBLE);
+                    heroLogoSlot.setVisibility(View.INVISIBLE);
+                }
+            }
+            @Override public void onPlayerError(androidx.media3.common.PlaybackException e) {
+                // Usually all tuners are busy: just keep showing the logo.
+                AppLog.w("Guide", "Preview of " + ch.number + " didn't start (" + e.getErrorCodeName() + ")");
+                stopPreview();
+            }
+        });
+        previewView.setPlayer(previewPlayer);
+        previewPlayer.setMediaItem(androidx.media3.common.MediaItem.fromUri(ch.streamUrl));
+        previewPlayer.prepare();
+        previewPlayer.setPlayWhenReady(true);
+    }
+
+    private void releaseExoPreview() {
+        if (previewPlayer != null) {
+            previewView.setPlayer(null);
+            previewPlayer.release();
+            previewPlayer = null;
+        }
+        previewView.setVisibility(View.GONE);
+    }
+
+    /** Stop any preview and free its tuner straight away. */
+    private void stopPreview() {
+        if (previewBox != null) previewBox.removeCallbacks(startPreview);
+        releaseExoPreview();
+        if (previewVlc != null) { previewVlc.release(); previewVlc = null; }
+        previewCh = null;
+        if (heroLogoSlot != null) heroLogoSlot.setVisibility(View.VISIBLE);
+    }
+
+    @Override public void onHidden() {
+        visible = false;
+        stopPreview();
+    }
+
+    @Override public void onShown() {
+        visible = true;
+        if (heroCh != null) schedulePreview(heroCh);
+    }
 
     private final boolean asOverlay;
     private TextView status, clock, weather;
@@ -101,8 +188,20 @@ public final class GuideLayout extends HomeLayout {
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setPadding(dp(24), dp(22), dp(24), dp(22));
         hero.setBackground(Ui.rounded(0x1FFFFFFF, dp(24), 0, 0));
+        // Live preview window (16:9-ish): the channel logo sits in it until the video starts.
+        previewBox = new android.widget.FrameLayout(c);
+        previewBox.setBackground(Ui.rounded(0xFF000000, dp(14), 0, 0));
+        previewBox.setClipToOutline(true);
         heroLogoSlot = new LinearLayout(c);
-        hero.addView(heroLogoSlot, Ui.lp(dp(150), dp(88)));
+        previewBox.addView(heroLogoSlot, new android.widget.FrameLayout.LayoutParams(dp(150), dp(88), Gravity.CENTER));
+        previewView = new androidx.media3.ui.PlayerView(c);
+        previewView.setUseController(false);
+        previewView.setShutterBackgroundColor(0xFF000000);
+        previewView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
+        previewView.setFocusable(false);
+        previewView.setVisibility(View.GONE);
+        previewBox.addView(previewView, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        hero.addView(previewBox, Ui.lp(-1, dp(prefs.livePreview() ? 164 : 92)));
         LinearLayout chLine = new LinearLayout(c);
         chLine.setGravity(Gravity.CENTER_VERTICAL);
         chLine.setPadding(0, dp(16), 0, 0);
@@ -123,7 +222,7 @@ public final class GuideLayout extends HomeLayout {
         hero.addView(heroProgress, Ui.margins(Ui.lp(-1, dp(4)), 0, dp(12), 0, 0));
         heroSynopsis = Ui.text(c, 14, 0xFFD1D1D6, false);
         heroSynopsis.setSingleLine(false);
-        heroSynopsis.setMaxLines(3);
+        heroSynopsis.setMaxLines(prefs.livePreview() ? 2 : 3); // the preview window takes some of the room
         heroSynopsis.setPadding(0, dp(12), 0, 0);
         hero.addView(heroSynopsis);
         heroNext = Ui.text(c, 14, Ui.SUB, false);
@@ -220,6 +319,7 @@ public final class GuideLayout extends HomeLayout {
     }
 
     private void showHero(Channel ch) {
+        if (ch != heroCh || previewCh == null) schedulePreview(ch);
         heroCh = ch;
         heroLogoSlot.removeAllViews();
         if (ch == null) {
