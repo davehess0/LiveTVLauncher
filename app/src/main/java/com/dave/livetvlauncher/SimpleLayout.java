@@ -21,13 +21,13 @@ public final class SimpleLayout extends HomeLayout {
     public SimpleLayout(LauncherActivity host) { super(host); }
 
     @Override public View create() {
-        android.widget.ScrollView sv = new android.widget.ScrollView(c);
+        android.widget.ScrollView sv = Ui.pageScroller(c);
         sv.setVerticalScrollBarEnabled(false);
         sv.setClipChildren(false);
         LinearLayout root = new LinearLayout(c);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(Ui.SIDE_DP), dp(32), dp(Ui.SIDE_DP), dp(32));
+        root.setPadding(dp(Ui.SIDE_DP), dp(32), dp(Ui.SIDE_DP), dp(Ui.SCROLL_CLEAR_DP + 8));
         root.setClipChildren(false);
         root.setClipToPadding(false); // focused tiles at the edges grow into the margin instead of being cut off
 

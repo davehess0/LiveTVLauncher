@@ -183,6 +183,27 @@ public final class Ui {
         v.setOnFocusChangeListener((view, has) -> lift(view, has, focusScale));
     }
 
+    /** How far (dp) scrolling keeps the selected item from the top and bottom of the screen. */
+    public static final int SCROLL_CLEAR_DP = 56;
+
+    /**
+     * A page scroller that keeps the selected item well clear of the top and bottom edges, so it never
+     * ends up hugging the bottom of the screen with its glow cut off. Pages should end with at least
+     * SCROLL_CLEAR_DP of bottom padding so the last item can be scrolled that far up.
+     */
+    public static android.widget.ScrollView pageScroller(Context c) {
+        android.widget.ScrollView sv = new android.widget.ScrollView(c) {
+            @Override protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect rect) {
+                android.graphics.Rect roomy = new android.graphics.Rect(rect);
+                roomy.inset(0, -dp(getContext(), SCROLL_CLEAR_DP));
+                return super.computeScrollDeltaToGetChildRectOnScreen(roomy);
+            }
+        };
+        sv.setVerticalScrollBarEnabled(false);
+        sv.setClipChildren(false);
+        return sv;
+    }
+
     /** Clips a view (e.g. a tile's picture) to rounded corners. */
     public static void roundCorners(View v, float radiusPx) {
         v.setOutlineProvider(new android.view.ViewOutlineProvider() {

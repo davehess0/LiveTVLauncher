@@ -31,12 +31,12 @@ public final class WallLayout extends HomeLayout {
     public WallLayout(LauncherActivity host) { super(host); }
 
     @Override public View create() {
-        ScrollView sv = new ScrollView(c);
+        ScrollView sv = Ui.pageScroller(c);
         sv.setVerticalScrollBarEnabled(false);
         sv.setClipChildren(false);
         LinearLayout root = new LinearLayout(c);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(Ui.SIDE_DP), dp(28), dp(Ui.SIDE_DP), dp(40));
+        root.setPadding(dp(Ui.SIDE_DP), dp(28), dp(Ui.SIDE_DP), dp(Ui.SCROLL_CLEAR_DP + 8));
         root.setClipChildren(false);
         root.setClipToPadding(false); // focused tiles at the edges grow into the margin instead of being cut off
 

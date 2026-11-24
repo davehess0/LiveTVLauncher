@@ -21,13 +21,13 @@ public final class SettingsActivity extends Activity {
         super.onCreate(b);
         prefs = new Prefs(this);
         getWindow().setBackgroundDrawable(Ui.pageBackground());
-        ScrollView sv = new ScrollView(this);
+        ScrollView sv = Ui.pageScroller(this);
         sv.setClipChildren(false);
         list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setClipChildren(false);
         int p = Ui.dp(this, 48);
-        list.setPadding(p * 3, p / 2, p * 3, p);
+        list.setPadding(p * 3, p / 2, p * 3, Math.max(p, Ui.dp(this, Ui.SCROLL_CLEAR_DP + 8)));
         sv.addView(list);
         setContentView(sv);
         render();

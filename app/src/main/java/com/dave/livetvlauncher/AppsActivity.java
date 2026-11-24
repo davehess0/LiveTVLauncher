@@ -17,7 +17,7 @@ public final class AppsActivity extends Activity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().setBackgroundDrawable(Ui.pageBackground());
-        ScrollView sv = new ScrollView(this);
+        ScrollView sv = Ui.pageScroller(this);
         sv.setClipChildren(false);
         sv.setVerticalScrollBarEnabled(false);
         LinearLayout root = new LinearLayout(this);
@@ -25,7 +25,7 @@ public final class AppsActivity extends Activity {
         root.setClipChildren(false);
         root.setClipToPadding(false); // tiles at the edges grow into the margin instead of being cut off
         int side = Ui.dp(this, Ui.SIDE_DP), p = Ui.dp(this, 48);
-        root.setPadding(side, p / 2, side, p);
+        root.setPadding(side, p / 2, side, Ui.dp(this, Ui.SCROLL_CLEAR_DP + 8));
         // Tiles are 16:9, the shape of Android TV app banners, so logos show whole instead of cropped.
         int gap = Ui.dp(this, GAP_DP);
         int tileW = (getResources().getDisplayMetrics().widthPixels - 2 * side - (COLUMNS - 1) * gap) / COLUMNS;
