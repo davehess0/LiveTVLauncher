@@ -119,9 +119,15 @@ public final class ChannelStore {
                         tunarr = TunarrClient.load(tunarrUrl);
                         lastTunarr = tunarr;
                     } catch (Exception e) {
-                        tunarrFailed = true;
-                        AppLog.e("Channels", "Tunarr load failed (" + tunarrUrl + "); keeping " + lastTunarr.size() + " cached channels", e);
-                        tunarr = lastTunarr;
+                        List<Channel> moved = findMovedTunarr(prefs, ip, tunarrUrl);
+                        if (moved != null) {
+                            tunarr = moved;
+                            lastTunarr = moved;
+                        } else {
+                            tunarrFailed = true;
+                            AppLog.e("Channels", "Tunarr load failed (" + tunarrUrl + "); keeping " + lastTunarr.size() + " cached channels", e);
+                            tunarr = lastTunarr;
+                        }
                     }
                     java.util.Set<String> taken = new java.util.HashSet<>();
                     for (Channel c : merged) taken.add(c.number);
@@ -181,6 +187,29 @@ public final class ChannelStore {
                 });
             }
         });
+    }
+
+    private volatile long lastTunarrSearch;
+
+    /**
+     * The saved Tunarr address stopped answering: the server may have a new address from the router.
+     * Search (at most every 10 minutes) and, if exactly one Tunarr is found elsewhere, switch to it.
+     */
+    private List<Channel> findMovedTunarr(Prefs prefs, String tunerIp, String savedUrl) {
+        long now = System.currentTimeMillis();
+        if (now - lastTunarrSearch < 10 * 60_000L) return null;
+        lastTunarrSearch = now;
+        try {
+            List<TunarrClient.Found> found = TunarrClient.find(tunerIp, null);
+            String saved = TunarrClient.normalize(savedUrl);
+            if (found.size() != 1 || found.get(0).base.equals(saved)) return null;
+            List<Channel> chs = TunarrClient.load(found.get(0).base);
+            prefs.setTunarrUrl(found.get(0).base);
+            AppLog.w("Channels", "Tunarr moved from " + saved + " to " + found.get(0).base + "; switched to it");
+            return chs;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** After a failure, retry soon and back off gradually; after a success, wait for the normal refresh. */

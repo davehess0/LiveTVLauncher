@@ -143,6 +143,7 @@ You can change this in Settings → **Play channels with**:
 **Favorites:** if you've marked favorite channels in the HDHomeRun app, set Settings → **Channels shown** → *Favorites only*.
 
 **Tunarr channels:** if you run a [Tunarr](https://github.com/chrisbenincasa/tunarr) server, enter its address in ⚙ Settings → **Tunarr server**, for example `http://192.168.1.50:8000`.
+- **Find Tunarr on the network** (in the Tunarr group, or on the phone page) searches for it and lets you pick it. It asks over SSDP first, then tries port 8000 on your network. If the saved address stops answering (say the router gave the server a new address), the launcher searches by itself, at most every 10 minutes, and switches to the server if it finds exactly one.
 - Its channels are listed after your antenna channels, with guide data from Tunarr's own XMLTV guide.
 - They play in the built-in player, with pause and rewind.
 - *Favorites only* always keeps Tunarr channels.

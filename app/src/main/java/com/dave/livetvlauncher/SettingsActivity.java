@@ -91,8 +91,10 @@ public final class SettingsActivity extends Activity {
                 render();
             });
         });
-        group("Tunarr", prefs.tunarrUrl().isEmpty() ? "Off" : prefs.tunarrUrl(), () ->
-                row("Tunarr server", prefs.tunarrUrl().isEmpty() ? "Off · click to add" : prefs.tunarrUrl(), v -> askTunarrUrl()));
+        group("Tunarr", prefs.tunarrUrl().isEmpty() ? "Off" : prefs.tunarrUrl(), () -> {
+            row("Find Tunarr on the network", "Search and pick your Tunarr server", v -> findTunarr());
+            row("Tunarr server", prefs.tunarrUrl().isEmpty() ? "Off · click to add" : prefs.tunarrUrl(), v -> askTunarrUrl());
+        });
         int iptvCount = 0;
         for (Channel c : ChannelStore.get().all()) if (c.iptv) iptvCount++;
         final int iptvN = iptvCount;
@@ -422,6 +424,54 @@ public final class SettingsActivity extends Activity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    /** Search the network for Tunarr servers and let the user pick one (or turn Tunarr off). */
+    private void findTunarr() {
+        AlertDialog searching = new AlertDialog.Builder(this)
+                .setTitle("Looking for Tunarr…")
+                .setMessage("Searching your home network. This can take up to 15 seconds.")
+                .setNegativeButton("Cancel", null)
+                .show();
+        net.execute(() -> {
+            java.util.List<TunarrClient.Found> found = TunarrClient.find(prefs.tunerIp(), prefs.tunarrUrl());
+            ui.post(() -> {
+                if (!searching.isShowing()) return; // cancelled
+                searching.dismiss();
+                showTunarrChoices(found);
+            });
+        });
+    }
+
+    private void showTunarrChoices(java.util.List<TunarrClient.Found> found) {
+        String current = prefs.tunarrUrl().isEmpty() ? "" : TunarrClient.normalize(prefs.tunarrUrl());
+        java.util.List<CharSequence> items = new java.util.ArrayList<>();
+        for (TunarrClient.Found f : found) {
+            items.add((f.base.equals(current) ? "✓  " : "") + f.label() + "\n" + f.base);
+        }
+        items.add((current.isEmpty() ? "✓  " : "") + "Off\nDon't use Tunarr");
+        items.add("Enter an address…");
+        new AlertDialog.Builder(this)
+                .setTitle(found.isEmpty() ? "No Tunarr server found" : found.size() == 1 ? "Found 1 Tunarr server" : "Found " + found.size() + " Tunarr servers")
+                .setItems(items.toArray(new CharSequence[0]), (d, which) -> {
+                    if (which < found.size()) {
+                        TunarrClient.Found f = found.get(which);
+                        prefs.setTunarrUrl(f.base);
+                        AppLog.i("Channels", "Tunarr chosen: " + f.label() + " at " + f.base);
+                        Toast.makeText(this, "Using " + f.label() + " at " + f.base, Toast.LENGTH_SHORT).show();
+                    } else if (which == found.size()) {
+                        prefs.setTunarrUrl("");
+                    } else {
+                        askTunarrUrl();
+                        return;
+                    }
+                    ChannelStore.get().refresh(this);
+                    render();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        if (found.isEmpty())
+            Toast.makeText(this, "Check Tunarr is running and on the same network, or enter its address.", Toast.LENGTH_LONG).show();
     }
 
     private void askTunarrUrl() {

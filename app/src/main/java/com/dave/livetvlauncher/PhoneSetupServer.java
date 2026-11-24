@@ -40,6 +40,8 @@ final class PhoneSetupServer {
     private volatile boolean running;
     /** Tuners from the last "Find HDHomeRun" on the phone page. */
     private volatile List<HdhrClient.Found> lastFound = java.util.Collections.emptyList();
+    /** Servers from the last "Find Tunarr" on the phone page. */
+    private volatile List<TunarrClient.Found> lastTunarr = java.util.Collections.emptyList();
 
     PhoneSetupServer(Context ctx, Runnable onChanged) {
         app = ctx.getApplicationContext();
@@ -205,6 +207,23 @@ final class PhoneSetupServer {
                 return lastFound.isEmpty() ? "No HDHomeRun found. Check it's on and on the same network, or type its address below."
                         : "Found " + lastFound.size() + (lastFound.size() == 1 ? " tuner" : " tuners") + ". Tap Use to pick one.";
             }
+            case "/findtunarr": {
+                lastTunarr = TunarrClient.find(prefs.tunerIp(), prefs.tunarrUrl());
+                return lastTunarr.isEmpty() ? "No Tunarr server found. Check it's running and on the same network, or type its address below."
+                        : "Found " + lastTunarr.size() + (lastTunarr.size() == 1 ? " Tunarr server" : " Tunarr servers") + ". Tap Use to pick one.";
+            }
+            case "/usetunarr": {
+                String base = clean(f.get("base"));
+                for (TunarrClient.Found t : lastTunarr) {
+                    if (t.base.equals(base)) {
+                        prefs.setTunarrUrl(base);
+                        AppLog.i("PhoneSetup", "Tunarr chosen from phone: " + t.label() + " at " + base);
+                        changed(true);
+                        return "Using " + esc(t.label()) + " at " + esc(base) + ". Channels are reloading on the TV.";
+                    }
+                }
+                return "Search again, then tap Use.";
+            }
             case "/usetuner": {
                 String ip = clean(f.get("ip"));
                 for (HdhrClient.Found t : lastFound) {
@@ -275,6 +294,19 @@ final class PhoneSetupServer {
         }
         b.append("<form method=post action='/find'><input type=hidden name=k value='").append(k)
          .append("'><button class=secondary>Find HDHomeRun on the network</button></form>");
+
+        // Tunarr search: servers found on the network with a "Use" button each.
+        b.append("<h2>Tunarr</h2>");
+        String tunarrNow = prefs.tunarrUrl().isEmpty() ? "" : TunarrClient.normalize(prefs.tunarrUrl());
+        for (TunarrClient.Found t : lastTunarr) {
+            boolean using = t.base.equals(tunarrNow);
+            b.append("<form method=post action='/usetunarr' class=cam><input type=hidden name=k value='").append(k)
+             .append("'><input type=hidden name=base value='").append(esc(t.base)).append("'><div><b>").append(esc(t.label()))
+             .append("</b><br><span class=dim>").append(esc(t.base)).append("</span></div>")
+             .append(using ? "<span class=dim>In use</span>" : "<button class=small>Use</button>").append("</form>");
+        }
+        b.append("<form method=post action='/findtunarr'><input type=hidden name=k value='").append(k)
+         .append("'><button class=secondary>Find Tunarr on the network</button></form>");
 
         b.append("<h2>Addresses</h2>");
         b.append("<form method=post action='/save'><input type=hidden name=k value='").append(k).append("'>")

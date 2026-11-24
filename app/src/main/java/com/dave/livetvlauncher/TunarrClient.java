@@ -174,4 +174,153 @@ final class TunarrClient {
             return 0;
         }
     }
+
+    // ---- Finding Tunarr on the network ----
+
+    static final class Found {
+        String base;    // e.g. http://192.168.1.50:8000
+        String version; // e.g. 1.3.8
+        String label() { return version.isEmpty() ? "Tunarr" : "Tunarr " + version; }
+    }
+
+    /** Tunarr's default web port; it can be changed, but the address scan only tries this one. */
+    static final int DEFAULT_PORT = 8000;
+
+    /**
+     * Tunarr servers on the home network. Tries the saved address, then asks over SSDP (Tunarr
+     * announces itself as a media server); if nothing answers, tries port 8000 on every address of
+     * this device's network and of the HDHomeRun's network. Network work: call off the main thread
+     * (about 2 s, up to ~14 s when it has to scan).
+     */
+    static List<Found> find(String tunerIp, String savedUrl) {
+        java.util.LinkedHashSet<String> bases = new java.util.LinkedHashSet<>();
+        if (savedUrl != null && !savedUrl.trim().isEmpty()) bases.add(normalize(savedUrl));
+        bases.addAll(ssdpSearch());
+        List<Found> out = new ArrayList<>();
+        for (String b : bases) {
+            Found f = probe(b, 3000);
+            if (f != null) out.add(f);
+        }
+        boolean scanned = false;
+        if (out.isEmpty()) {
+            scanned = true;
+            out.addAll(scan(tunerIp));
+        }
+        AppLog.i("Channels", "Tunarr search found " + out.size() + (out.size() == 1 ? " server" : " servers")
+                + (scanned ? " (address scan)" : "") + (out.isEmpty() ? "" : ": " + bases(out)));
+        return out;
+    }
+
+    private static String bases(List<Found> fs) {
+        StringBuilder b = new StringBuilder();
+        for (Found f : fs) b.append(b.length() > 0 ? ", " : "").append(f.base);
+        return b.toString();
+    }
+
+    static String normalize(String address) {
+        String b = address.trim();
+        if (!b.matches("(?i)^https?://.*")) b = "http://" + b;
+        while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
+        return b;
+    }
+
+    /** Tunarr answers /api/version with {"tunarr":"1.3.8", ...}. */
+    private static Found probe(String base, int timeoutMs) {
+        try {
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(base + "/api/version").openConnection();
+            c.setConnectTimeout(timeoutMs);
+            c.setReadTimeout(timeoutMs);
+            try {
+                if (c.getResponseCode() != 200) return null;
+                java.io.InputStream in = c.getInputStream();
+                java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[2048];
+                int n;
+                while (bo.size() < 8192 && (n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                JSONObject j = new JSONObject(bo.toString("UTF-8"));
+                if (!j.has("tunarr")) return null;
+                Found f = new Found();
+                f.base = base;
+                f.version = j.optString("tunarr", "");
+                return f;
+            } finally {
+                c.disconnect();
+            }
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** SSDP M-SEARCH: http://<answering address>:<port> for each media server that replied. */
+    private static List<String> ssdpSearch() {
+        List<String> out = new ArrayList<>();
+        try (java.net.DatagramSocket s = new java.net.DatagramSocket()) {
+            s.setSoTimeout(300);
+            byte[] msg = ("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\n"
+                    + "MX: 1\r\nST: urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n").getBytes("US-ASCII");
+            java.net.InetAddress group = java.net.InetAddress.getByName("239.255.255.250");
+            s.send(new java.net.DatagramPacket(msg, msg.length, group, 1900));
+            s.send(new java.net.DatagramPacket(msg, msg.length, group, 1900));
+            byte[] buf = new byte[2048];
+            long end = System.currentTimeMillis() + 1800;
+            while (System.currentTimeMillis() < end) {
+                java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
+                try {
+                    s.receive(p);
+                } catch (java.net.SocketTimeoutException again) {
+                    continue;
+                }
+                String reply = new String(buf, 0, p.getLength(), "US-ASCII");
+                for (String line : reply.split("\r\n")) {
+                    if (!line.regionMatches(true, 0, "LOCATION:", 0, 9)) continue;
+                    try {
+                        java.net.URL loc = new java.net.URL(line.substring(9).trim());
+                        // Use the address the reply came from: servers also advertise other interfaces
+                        // of theirs (e.g. a virtual network) that this device can't reach.
+                        String base = "http://" + p.getAddress().getHostAddress() + ":" + (loc.getPort() > 0 ? loc.getPort() : 80);
+                        if (!out.contains(base)) out.add(base);
+                    } catch (Exception ignored) { }
+                }
+            }
+        } catch (Exception ignored) {
+            // No network / multicast blocked: the address scan still runs.
+        }
+        return out;
+    }
+
+    /** Tries port 8000 on every address of this device's /24 networks and the HDHomeRun's. */
+    private static List<Found> scan(String tunerIp) {
+        java.util.LinkedHashSet<String> prefixes = new java.util.LinkedHashSet<>();
+        try {
+            for (java.net.NetworkInterface ni : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (java.net.InetAddress a : java.util.Collections.list(ni.getInetAddresses())) {
+                    if (a instanceof java.net.Inet4Address && a.isSiteLocalAddress()) prefixes.add(prefix(a.getHostAddress()));
+                }
+            }
+        } catch (Exception ignored) { }
+        String t = tunerIp == null ? "" : tunerIp.trim().replaceAll("^https?://", "").replaceAll("[:/].*$", "");
+        if (t.matches("\\d+\\.\\d+\\.\\d+\\.\\d+")) prefixes.add(prefix(t));
+        List<Found> out = java.util.Collections.synchronizedList(new ArrayList<>());
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(48);
+        for (String pre : prefixes) {
+            for (int i = 1; i < 255; i++) {
+                final String base = "http://" + pre + i + ":" + DEFAULT_PORT;
+                pool.execute(() -> {
+                    Found f = probe(base, 600);
+                    if (f != null) out.add(f);
+                });
+            }
+        }
+        pool.shutdown();
+        try {
+            pool.awaitTermination(12, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) { }
+        pool.shutdownNow();
+        synchronized (out) { return new ArrayList<>(out); }
+    }
+
+    private static String prefix(String ip) {
+        return ip.substring(0, ip.lastIndexOf('.') + 1);
+    }
 }
