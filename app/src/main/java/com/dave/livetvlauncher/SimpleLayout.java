@@ -16,7 +16,7 @@ import java.util.Locale;
  */
 public final class SimpleLayout extends HomeLayout {
     private TextView clock, date, status, weather;
-    private LinearLayout watch, plexBox;
+    private LinearLayout watch, plexBox, recent;
 
     public SimpleLayout(LauncherActivity host) { super(host); }
 
@@ -61,6 +61,8 @@ public final class SimpleLayout extends HomeLayout {
         LinearLayout lower = new LinearLayout(c);
         lower.setOrientation(LinearLayout.VERTICAL);
         lower.setClipChildren(false);
+        recent = recentBox();
+        lower.addView(recent);
         lower.addView(section("Streaming"));
         lower.addView(streamingRow(200, 112));
         plexBox = new LinearLayout(c);
@@ -103,6 +105,7 @@ public final class SimpleLayout extends HomeLayout {
 
     @Override public void bind(List<Channel> channels, String st) {
         showStatus(status, st);
+        fillRecent(recent, 200);
         tick();
     }
 
@@ -113,6 +116,12 @@ public final class SimpleLayout extends HomeLayout {
         Channel last = ChannelStore.get().byNumber(prefs.lastChannel());
         if (last != null) setSubtitle(watch, last.number + " · " + nowTitle(last));
         else setSubtitle(watch, ChannelStore.get().isLoaded() ? "Start watching" : "Waiting for tuner…");
+        refreshRecent();
+    }
+
+    @Override public void showLastWatched() {
+        fillRecent(recent, 200);
+        tick();
     }
 
     @Override public void focusDefault() { watch.requestFocus(); }

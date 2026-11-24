@@ -18,7 +18,7 @@ public final class WallLayout extends HomeLayout {
 
     private TextView status, clock, weather;
     private LinearLayout resumeTile, plexTile, hdhrTile;
-    private LinearLayout grid, plexBox;
+    private LinearLayout grid, plexBox, recent;
     private final List<Card> cards = new ArrayList<>();
 
     private static final class Card {
@@ -60,6 +60,9 @@ public final class WallLayout extends HomeLayout {
         top.addView(sourceTile("Settings", null, Ui.SUB, "⚙", 18, v -> host.openSettings()),
                 Ui.lp(dp(130), dp(150)));
         root.addView(top);
+
+        recent = recentBox();
+        root.addView(recent);
 
         root.addView(section("Streaming"));
         root.addView(streamingRow(176, 99));
@@ -126,6 +129,12 @@ public final class WallLayout extends HomeLayout {
             }
         }
         updateResume();
+        fillRecent(recent, 176);
+    }
+
+    @Override public void showLastWatched() {
+        fillRecent(recent, 176);
+        tick();
     }
 
     private Card makeCard(Channel ch) {
@@ -182,6 +191,7 @@ public final class WallLayout extends HomeLayout {
         showWeather(weather);
         for (Card k : cards) fill(k);
         updateResume();
+        refreshRecent();
     }
 
     @Override public void focusDefault() {

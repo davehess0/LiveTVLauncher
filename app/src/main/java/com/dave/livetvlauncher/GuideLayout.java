@@ -108,7 +108,7 @@ public final class GuideLayout extends HomeLayout {
     private LinearLayout heroLogoSlot;
     private TextView heroChannel, heroTitle, heroMeta, heroSynopsis, heroNext;
     private Ui.ProgressLine heroProgress;
-    private LinearLayout list, plexBox;
+    private LinearLayout list, plexBox, recent;
     private ScrollView scroll;
     private View firstAction;
     private final List<Row> rows = new ArrayList<>();
@@ -172,6 +172,9 @@ public final class GuideLayout extends HomeLayout {
         LinearLayout content = new LinearLayout(c);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setClipChildren(false);
+        // Recently watched channels sit above the full list.
+        recent = recentBox();
+        content.addView(recent);
         list = new LinearLayout(c);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setClipChildren(false);
@@ -269,6 +272,7 @@ public final class GuideLayout extends HomeLayout {
             showHero(null);
             return;
         }
+        fillRecent(recent, 150);
         for (Channel ch : channels) list.addView(makeRow(ch).view);
         Channel last = ChannelStore.get().byNumber(prefs.lastChannel());
         showHero(last != null ? last : channels.get(0));
@@ -362,10 +366,14 @@ public final class GuideLayout extends HomeLayout {
         clock.setText(Ui.clock(prefs.clock24h()));
         showWeather(weather);
         for (Row r : rows) fillRow(r);
+        refreshRecent();
         if (heroCh != null) showHero(heroCh);
     }
 
+    @Override protected void onRecentFocused(Channel ch) { showHero(ch); }
+
     @Override public void showLastWatched() {
+        fillRecent(recent, 150);
         Channel last = ChannelStore.get().byNumber(prefs.lastChannel());
         if (last == null) return;
         for (Row r : rows) {

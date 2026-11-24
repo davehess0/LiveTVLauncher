@@ -310,6 +310,101 @@ public abstract class HomeLayout {
         return sv;
     }
 
+    // ---- Recent channels ----
+
+    private static final class RecentTile {
+        Channel ch;
+        TextView title;
+        Ui.ProgressLine progress;
+    }
+    private final java.util.List<RecentTile> recentTiles = new java.util.ArrayList<>();
+    private String recentKey = "";
+
+    /** A channel tile in the Recent Channels row got focus (the Guide shows it in its preview). */
+    protected void onRecentFocused(Channel ch) {
+        Channel.Airing a = ch.now(now());
+        host.setBackdrop(a != null && a.imageUrl != null ? a.imageUrl : ch.logoUrl);
+    }
+
+    /**
+     * Fills {@code box} with a "Recent Channels" heading and a row of the channels watched lately
+     * (most recent first). Rebuilds only when the list changed, so focus isn't lost on a refresh.
+     */
+    protected void fillRecent(LinearLayout box, int tileWDp) {
+        if (box == null) return;
+        java.util.List<Channel> chs = new java.util.ArrayList<>();
+        StringBuilder key = new StringBuilder();
+        for (String n : prefs.recentChannels()) {
+            Channel ch = ChannelStore.get().byNumber(n);
+            if (ch == null) continue;
+            chs.add(ch);
+            key.append(n).append('|').append(System.identityHashCode(ch)).append(',');
+        }
+        if (key.toString().equals(recentKey) && box.getChildCount() > 0) { refreshRecent(); return; }
+        recentKey = key.toString();
+        View focused = box.findFocus();
+        String focusedNum = focused != null && focused.getTag() instanceof String ? (String) focused.getTag() : null;
+        box.removeAllViews();
+        recentTiles.clear();
+        if (chs.isEmpty()) return;
+        box.addView(section("Recent Channels"));
+        android.widget.HorizontalScrollView sv = new android.widget.HorizontalScrollView(c);
+        sv.setHorizontalScrollBarEnabled(false);
+        sv.setClipChildren(false);
+        sv.setClipToPadding(false);
+        LinearLayout row = new LinearLayout(c);
+        row.setClipChildren(false);
+        row.setPadding(dp(4), dp(6), dp(4), dp(6));
+        View refocus = null;
+        for (Channel ch : chs) {
+            RecentTile t = new RecentTile();
+            t.ch = ch;
+            LinearLayout v = Ui.card(c, LinearLayout.VERTICAL, Ui.ACCENT);
+            v.setTag(ch.number);
+            v.setPadding(dp(12), dp(10), dp(12), dp(10));
+            v.addView(logo(ch, tileWDp - 24, 52, 22), Ui.lp(-1, dp(52)));
+            TextView nm = Ui.text(c, 12, Ui.ACCENT, true);
+            nm.setText(ch.number + "  " + ch.name);
+            nm.setPadding(0, dp(8), 0, 0);
+            v.addView(nm);
+            t.title = Ui.text(c, 14, Ui.TEXT, true);
+            t.title.setPadding(0, dp(2), 0, 0);
+            v.addView(t.title);
+            t.progress = new Ui.ProgressLine(c, Ui.ACCENT);
+            v.addView(t.progress, Ui.margins(Ui.lp(-1, dp(4)), 0, dp(8), 0, 0));
+            v.setOnClickListener(x -> host.play(ch));
+            v.setOnFocusChangeListener((x, has) -> {
+                if (has) { Ui.adoptFocusColors(x); onRecentFocused(ch); }
+                Ui.lift(x, has, 1.06f);
+            });
+            row.addView(v, Ui.margins(Ui.lp(dp(tileWDp), -2), 0, 0, dp(16), 0));
+            recentTiles.add(t);
+            if (ch.number.equals(focusedNum)) refocus = v;
+        }
+        sv.addView(row);
+        box.addView(sv);
+        refreshRecent();
+        if (refocus != null) refocus.requestFocus();
+    }
+
+    /** Moves the recent tiles' titles and progress bars along (called from tick). */
+    protected void refreshRecent() {
+        long now = now();
+        for (RecentTile t : recentTiles) {
+            Channel.Airing a = t.ch.now(now);
+            t.title.setText(a != null ? a.title : t.ch.name);
+            t.progress.setProgress(a != null ? a.progress(now) : 0);
+            t.progress.setVisibility(a != null ? View.VISIBLE : View.INVISIBLE);
+        }
+    }
+
+    protected LinearLayout recentBox() {
+        LinearLayout b = new LinearLayout(c);
+        b.setOrientation(LinearLayout.VERTICAL);
+        b.setClipChildren(false);
+        return b;
+    }
+
     /** Fills a container with "Continue watching" and "Recently added movies" rows. */
     protected void fillPlexRows(LinearLayout target, PlexClient.Library lib, int posterWDp) {
         target.removeAllViews();

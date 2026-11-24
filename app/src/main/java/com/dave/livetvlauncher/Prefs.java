@@ -122,7 +122,24 @@ public final class Prefs {
     public void setTunarrUrl(String v) { sp.edit().putString("tunarrUrl", v == null ? "" : v.trim()).apply(); }
 
     public String lastChannel() { return sp.getString("lastChannel", null); }
-    public void setLastChannel(String v) { sp.edit().putString("lastChannel", v).apply(); }
+    public void setLastChannel(String v) {
+        if (v == null) return;
+        // Also the newest entry in the recent channels list (most recent first, no repeats).
+        java.util.List<String> recent = recentChannels();
+        recent.remove(v);
+        recent.add(0, v);
+        while (recent.size() > RECENT_MAX) recent.remove(recent.size() - 1);
+        sp.edit().putString("lastChannel", v).putString("recentChannels", android.text.TextUtils.join("\n", recent)).apply();
+    }
+
+    static final int RECENT_MAX = 10;
+    /** Channel numbers watched lately, most recent first. */
+    public java.util.List<String> recentChannels() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String s : sp.getString("recentChannels", "").split("\n")) if (!s.isEmpty()) out.add(s);
+        if (out.isEmpty() && lastChannel() != null) out.add(lastChannel());
+        return out;
+    }
 
     public boolean showAppRow() { return sp.getBoolean("showAppRow", true); }
     public void setShowAppRow(boolean v) { sp.edit().putBoolean("showAppRow", v).apply(); }
