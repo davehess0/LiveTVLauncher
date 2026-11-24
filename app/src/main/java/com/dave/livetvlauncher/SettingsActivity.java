@@ -47,25 +47,39 @@ public final class SettingsActivity extends Activity {
         list.addView(title);
 
         row("Set up from your phone", "Scan a QR code to enter addresses on your phone", v -> showPhoneSetup());
-        row("Home screen layout", layoutName(prefs.layout()), v -> {
-            String l = prefs.layout();
-            prefs.setLayout(Prefs.LAYOUT_GUIDE.equals(l) ? Prefs.LAYOUT_WALL
-                    : Prefs.LAYOUT_WALL.equals(l) ? Prefs.LAYOUT_SIMPLE : Prefs.LAYOUT_GUIDE);
-            render();
+        group("Home screen", layoutName(prefs.layout()) + " · " + (prefs.clock24h() ? "24-hour" : "12-hour") + " clock", () -> {
+            row("Home screen layout", layoutName(prefs.layout()), v -> {
+                String l = prefs.layout();
+                prefs.setLayout(Prefs.LAYOUT_GUIDE.equals(l) ? Prefs.LAYOUT_WALL
+                        : Prefs.LAYOUT_WALL.equals(l) ? Prefs.LAYOUT_SIMPLE : Prefs.LAYOUT_GUIDE);
+                render();
+            });
+            row("Streaming row", "Open Apps and long-press OK on any app to pin / unpin it",
+                    v -> startActivity(new android.content.Intent(this, AppsActivity.class)));
+            row("Apps row on Channel Wall", prefs.showAppRow() ? "Shown" : "Hidden", v -> {
+                prefs.setShowAppRow(!prefs.showAppRow());
+                render();
+            });
+            row("Clock", prefs.clock24h() ? "24-hour" : "12-hour", v -> {
+                prefs.setClock24h(!prefs.clock24h());
+                render();
+            });
         });
-        row("Live preview in the guide", prefs.livePreview() ? "On (uses a tuner while showing)" : "Off", v -> {
-            prefs.setLivePreview(!prefs.livePreview());
-            render();
-        });
-        row("When the app opens", prefs.startOnLastChannel() ? "Play the last channel" : "Show the home screen", v -> {
-            prefs.setStartOnLastChannel(!prefs.startOnLastChannel());
-            render();
-        });
-        row("Play channels with", playerName(prefs.player()), v -> {
-            String pl = prefs.player();
-            prefs.setPlayer(Prefs.PLAYER_BUILTIN.equals(pl) ? Prefs.PLAYER_EXTERNAL
-                    : Prefs.PLAYER_EXTERNAL.equals(pl) ? Prefs.PLAYER_HDHR_APP : Prefs.PLAYER_BUILTIN);
-            render();
+        group("Playback", playerName(prefs.player()), () -> {
+            row("Play channels with", playerName(prefs.player()), v -> {
+                String pl = prefs.player();
+                prefs.setPlayer(Prefs.PLAYER_BUILTIN.equals(pl) ? Prefs.PLAYER_EXTERNAL
+                        : Prefs.PLAYER_EXTERNAL.equals(pl) ? Prefs.PLAYER_HDHR_APP : Prefs.PLAYER_BUILTIN);
+                render();
+            });
+            row("When the app opens", prefs.startOnLastChannel() ? "Play the last channel" : "Show the home screen", v -> {
+                prefs.setStartOnLastChannel(!prefs.startOnLastChannel());
+                render();
+            });
+            row("Live preview in the guide", prefs.livePreview() ? "On (uses a tuner while showing)" : "Off", v -> {
+                prefs.setLivePreview(!prefs.livePreview());
+                render();
+            });
         });
 
         group("HDHomeRun", (prefs.tunerIp().isEmpty() ? "Automatic" : prefs.tunerIp())
@@ -100,29 +114,24 @@ public final class SettingsActivity extends Activity {
             row("Add camera", "RTSP address from the Eufy app (or a go2rtc relay)", v -> askCamera(-1));
         });
 
-        row("Streaming row", "Open Apps and long-press OK on any app to pin / unpin it",
-                v -> startActivity(new android.content.Intent(this, AppsActivity.class)));
-        row("Apps row on Channel Wall", prefs.showAppRow() ? "Shown" : "Hidden", v -> {
-            prefs.setShowAppRow(!prefs.showAppRow());
-            render();
+        group("Weather", prefs.weatherLat().isEmpty() ? "Off" : prefs.weatherPlace()
+                + (prefs.weatherAlerts() ? " · alerts on" : ""), () -> {
+            row("Weather location", prefs.weatherLat().isEmpty() ? "Off · click to set your ZIP code or city"
+                    : prefs.weatherPlace() + (prefs.weatherFahrenheit() ? " · °F" : " · °C"), v -> askWeather());
+            row("Weather alerts", prefs.weatherAlerts() ? "Pop up (US · National Weather Service)" : "Off", v -> {
+                prefs.setWeatherAlerts(!prefs.weatherAlerts());
+                render();
+            });
         });
-        row("Clock", prefs.clock24h() ? "24-hour" : "12-hour", v -> {
-            prefs.setClock24h(!prefs.clock24h());
-            render();
+        group("System", "PIN " + (prefs.pin().isEmpty() ? "off" : "on") + " · refresh · log", () -> {
+            row("Settings PIN", prefs.pin().isEmpty() ? "Off" : "On", v -> askPin());
+            row("Refresh channels & guide", ChannelStore.get().status(), v -> {
+                ChannelStore.get().refresh(this);
+                Toast.makeText(this, "Refreshing…", Toast.LENGTH_SHORT).show();
+            });
+            row("Log", "Today's events and errors · kept " + AppLog.KEEP_DAYS + " days", v -> showLog());
+            row("Android settings", "Wi-Fi, display, sound, restricted profile", v -> Apps.openSystemSettings(this));
         });
-        row("Weather alerts", prefs.weatherAlerts() ? "Pop up (US · National Weather Service)" : "Off", v -> {
-            prefs.setWeatherAlerts(!prefs.weatherAlerts());
-            render();
-        });
-        row("Weather", prefs.weatherLat().isEmpty() ? "Off · click to set your ZIP code or city"
-                : prefs.weatherPlace() + (prefs.weatherFahrenheit() ? " · °F" : " · °C"), v -> askWeather());
-        row("Settings PIN", prefs.pin().isEmpty() ? "Off" : "On", v -> askPin());
-        row("Refresh channels & guide", ChannelStore.get().status(), v -> {
-            ChannelStore.get().refresh(this);
-            Toast.makeText(this, "Refreshing…", Toast.LENGTH_SHORT).show();
-        });
-        row("Log", "Today's events and errors · kept " + AppLog.KEEP_DAYS + " days", v -> showLog());
-        row("Android settings", "Wi-Fi, display, sound, restricted profile", v -> Apps.openSystemSettings(this));
 
         TextView about = Ui.text(this, 14, Ui.SUB, false);
         about.setSingleLine(false);
@@ -140,7 +149,9 @@ public final class SettingsActivity extends Activity {
     private void group(String name, String summary, Runnable body) {
         boolean open = expanded.contains(name);
         row((open ? "▾  " : "▸  ") + name, open ? "" : summary, v -> {
-            if (!expanded.remove(name)) expanded.add(name);
+            boolean wasOpen = expanded.contains(name);
+            expanded.clear(); // one group open at a time keeps the list short
+            if (!wasOpen) expanded.add(name);
             render();
         });
         // Tag by name only, so focus stays on the heading when its arrow flips.
