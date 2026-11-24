@@ -233,6 +233,58 @@ public abstract class HomeLayout {
         return bleed(sv);
     }
 
+    /**
+     * Scroller for the Recent Channels and Plex rows. Rows that run to the screen edges use it as is;
+     * rows kept inside a column (the Guide) fade out at their ends instead of being cut by a hard line.
+     */
+    protected android.widget.HorizontalScrollView rowScroller() {
+        return fullBleedRows() ? new android.widget.HorizontalScrollView(c) : new FadingRow(c);
+    }
+
+    /**
+     * A row that fades its tiles out at its left and right ends (only where there's more to scroll to),
+     * and keeps the selected tile clear of the fade. The fade is drawn over the row's full height plus
+     * room above and below, so a selected tile's glow isn't cut.
+     */
+    private static final class FadingRow extends android.widget.HorizontalScrollView {
+        private final android.graphics.Paint fade = new android.graphics.Paint();
+        private final int len, spill;
+
+        FadingRow(Context c) {
+            super(c);
+            len = Ui.dp(c, 56);
+            spill = Ui.dp(c, 32);
+            fade.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT));
+        }
+
+        @Override protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect rect) {
+            android.graphics.Rect roomy = new android.graphics.Rect(rect);
+            roomy.inset(-(len + Ui.dp(getContext(), 8)), 0);
+            return super.computeScrollDeltaToGetChildRectOnScreen(roomy);
+        }
+
+        @Override protected void dispatchDraw(android.graphics.Canvas canvas) {
+            int x = getScrollX(), w = getWidth(), h = getHeight();
+            View child = getChildAt(0);
+            boolean moreLeft = x > 0;
+            boolean moreRight = child != null && x + w < child.getRight() + getPaddingRight();
+            if (!moreLeft && !moreRight) { super.dispatchDraw(canvas); return; }
+            int save = canvas.saveLayer(x - spill, -spill, x + w + spill, h + spill, null);
+            super.dispatchDraw(canvas);
+            if (moreLeft) {
+                fade.setShader(new android.graphics.LinearGradient(x, 0, x + len, 0, 0xFF000000, 0x00000000,
+                        android.graphics.Shader.TileMode.CLAMP));
+                canvas.drawRect(x - spill, -spill, x + len, h + spill, fade);
+            }
+            if (moreRight) {
+                fade.setShader(new android.graphics.LinearGradient(x + w - len, 0, x + w, 0, 0x00000000, 0xFF000000,
+                        android.graphics.Shader.TileMode.CLAMP));
+                canvas.drawRect(x + w - len, -spill, x + w + spill, h + spill, fade);
+            }
+            canvas.restoreToCount(save);
+        }
+    }
+
     /** Plex rows arrived or changed. Layouts that show Plex override this. */
     public void bindPlex(PlexClient.Library lib) {}
 
@@ -271,7 +323,7 @@ public abstract class HomeLayout {
     /** A horizontal row of Plex posters. Returns null when there's nothing to show. */
     protected View plexRow(List<PlexClient.Item> items, boolean showProgress, int posterWDp) {
         if (items == null || items.isEmpty()) return null;
-        android.widget.HorizontalScrollView sv = new android.widget.HorizontalScrollView(c);
+        android.widget.HorizontalScrollView sv = rowScroller();
         sv.setHorizontalScrollBarEnabled(false);
         sv.setClipChildren(false);
         sv.setClipToPadding(false);
@@ -356,7 +408,7 @@ public abstract class HomeLayout {
         recentTiles.clear();
         if (chs.isEmpty()) return;
         box.addView(section("Recent Channels"));
-        android.widget.HorizontalScrollView sv = new android.widget.HorizontalScrollView(c);
+        android.widget.HorizontalScrollView sv = rowScroller();
         sv.setHorizontalScrollBarEnabled(false);
         sv.setClipChildren(false);
         sv.setClipToPadding(false);
