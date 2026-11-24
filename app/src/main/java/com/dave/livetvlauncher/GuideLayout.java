@@ -155,21 +155,35 @@ public final class GuideLayout extends HomeLayout {
         top.addView(clock);
         root.addView(top);
 
-        // Streaming apps, same row as Channel Wall.
-        root.addView(streamingRow(128, 72));
+        // Streaming apps, same row as Channel Wall, with room above and below for a tile to grow.
+        View streaming = streamingRow(128, 72);
+        ((LinearLayout.LayoutParams) streaming.getLayoutParams()).setMargins(-dp(Ui.SIDE_DP), dp(16), -dp(Ui.SIDE_DP), dp(4));
+        root.addView(streaming);
 
         // Body: channel list on the left, preview of the focused channel on the right.
         LinearLayout body = new LinearLayout(c);
         // Must clip: with hardware drawing, the list is only cut off at its edges if its parent clips.
         body.setClipChildren(true);
 
-        scroll = new ScrollView(c);
-        // Clip to the list's own area so rows and Plex posters scrolled out of view don't draw over
-        // the top bar or the preview panel. The padding leaves room for the focused row's lift.
-        scroll.setClipChildren(true);
+        scroll = new ScrollView(c) {
+            // Scrolling keeps the selected row this far from the top and bottom edges, so it's never
+            // cut off by the bottom of the screen and its glow has room.
+            @Override protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect rect) {
+                android.graphics.Rect roomy = new android.graphics.Rect(rect);
+                roomy.inset(0, -dp(36));
+                return super.computeScrollDeltaToGetChildRectOnScreen(roomy);
+            }
+        };
+        // The body (above) cuts the list off at the list's own edges, so rows scrolled out of view don't
+        // draw over the streaming apps or the preview panel. The list itself must not clip: a clipping
+        // container cuts each child at the child's own width, which would chop the selected row's glow.
+        // The padding is the room the glow and lift get inside the list's area.
+        scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
         scroll.setVerticalScrollBarEnabled(false);
-        scroll.setPadding(dp(10), dp(8), dp(12), dp(24));
+        // The list reaches into the page margin, so a selected row has room to grow and glow, while
+        // the left padding keeps the rows lined up with the title and the streaming apps above.
+        scroll.setPadding(dp(Ui.SIDE_DP), dp(18), dp(22), dp(28));
         LinearLayout content = new LinearLayout(c);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setClipChildren(false);
@@ -235,9 +249,9 @@ public final class GuideLayout extends HomeLayout {
         hero.addView(new View(c), Ui.lpWeight(-1, 0, 1));
         status = Ui.text(c, 12, Ui.DIM, false);
         hero.addView(status);
-        body.addView(hero, Ui.margins(Ui.lpWeight(0, -1, 1), dp(16), dp(6), 0, dp(24)));
+        body.addView(hero, Ui.margins(Ui.lpWeight(0, -1, 1), dp(6), dp(18), 0, dp(24)));
 
-        root.addView(body, Ui.lpWeight(-1, 0, 1));
+        root.addView(body, Ui.margins(Ui.lpWeight(-1, 0, 1), -dp(Ui.SIDE_DP), 0, 0, 0));
         return root;
     }
 
