@@ -175,11 +175,22 @@ public abstract class HomeLayout {
     }
 
     protected void showWeather(TextView label) {
-        String w = Weather.get().text(prefs);
-        // ⚠ in front of the temperature while a weather alert is active (select it for details).
-        if (!w.isEmpty() && !Weather.get().alerts(prefs).isEmpty()) w = "⚠️ " + w;
-        label.setText(w);
+        String w = Weather.get().text(prefs); // e.g. "☁️ 37°"
         label.setVisibility(w.isEmpty() ? View.GONE : View.VISIBLE);
+        if (w.isEmpty() || Weather.get().alerts(prefs).isEmpty()) {
+            label.setText(w);
+            return;
+        }
+        // An active weather alert: a small ⚠ badge on the corner of the weather icon (select it for details).
+        int gap = w.indexOf(' ');
+        String icon = gap > 0 ? w.substring(0, gap) : "", rest = gap > 0 ? w.substring(gap) : w;
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder(icon);
+        int s = sb.length();
+        sb.append("⚠️");
+        sb.setSpan(new android.text.style.RelativeSizeSpan(0.5f), s, sb.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        sb.setSpan(new android.text.style.SuperscriptSpan(), s, sb.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        sb.append(rest);
+        label.setText(sb);
     }
 
     /** Horizontal row of allowed apps (banners) for the bottom of a layout. */
