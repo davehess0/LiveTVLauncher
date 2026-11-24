@@ -189,8 +189,13 @@ public abstract class HomeLayout {
         t.setFocusable(true);
         t.setClickable(true);
         t.setOnClickListener(v -> host.openWeather());
+        // No background at rest; when selected, the same glass and glow as every other tile.
+        t.setBackground(Ui.glassWithGlow(c, dp(18), 0x00000000));
         t.setOnFocusChangeListener((v, has) -> {
-            v.setBackground(has ? Ui.focusedGlass(c, dp(18)) : null);
+            // The clock row would otherwise cut the glow off in a hard rectangle.
+            if (has && v.getParent() instanceof android.view.ViewGroup)
+                ((android.view.ViewGroup) v.getParent()).setClipChildren(false);
+            Ui.lift(v, has, 1.06f);
         });
         return t;
     }
