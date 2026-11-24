@@ -255,6 +255,12 @@ public final class GuideLayout extends HomeLayout {
         return root;
     }
 
+    /** Recent Channels, with a clear gap before the full channel list when the row is showing. */
+    private void fillRecentSpaced() {
+        fillRecent(recent, 150);
+        recent.setPadding(0, 0, 0, recent.getChildCount() > 0 ? dp(28) : 0);
+    }
+
     /** Recent Channels and Plex rows stay inside the channel-list column. */
     @Override protected boolean fullBleedRows() { return false; }
 
@@ -290,7 +296,7 @@ public final class GuideLayout extends HomeLayout {
             showHero(null);
             return;
         }
-        fillRecent(recent, 150);
+        fillRecentSpaced();
         for (Channel ch : channels) list.addView(makeRow(ch).view);
         Channel last = ChannelStore.get().byNumber(prefs.lastChannel());
         showHero(last != null ? last : channels.get(0));
@@ -391,7 +397,7 @@ public final class GuideLayout extends HomeLayout {
     @Override protected void onRecentFocused(Channel ch) { showHero(ch); }
 
     @Override public void showLastWatched() {
-        fillRecent(recent, 150);
+        fillRecentSpaced();
         Channel last = ChannelStore.get().byNumber(prefs.lastChannel());
         if (last == null) return;
         for (Row r : rows) {
