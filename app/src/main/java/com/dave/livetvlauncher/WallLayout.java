@@ -51,10 +51,10 @@ public final class WallLayout extends HomeLayout {
         resumeTile = sourceTile("Resume", "Last channel", Ui.LIVE_RED, "●", 22, v -> host.resumeLastChannel());
         hdhrTile = sourceTile("HDHomeRun", Apps.installed(c, Apps.HDHR) ? "Live TV & DVR" : "Not available in this profile",
                 Ui.ACCENT, "▶", 22, v -> Apps.launch(host, Apps.HDHR));
-        top.addView(resumeTile, Ui.margins(Ui.lpWeight(0, dp(150), 1.3f), 0, 0, dp(18), 0));
-        top.addView(hdhrTile, Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(18), 0));
+        top.addView(resumeTile, Ui.margins(Ui.lpWeight(0, dp(150), 1.3f), 0, 0, dp(24), 0));
+        top.addView(hdhrTile, Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(24), 0));
         if (host.hasCameras()) top.addView(sourceTile("Cameras", "Live view", Ui.LIVE_RED, "◉", 22, v -> host.openCameras()),
-                Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(18), 0));
+                Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(24), 0));
         top.addView(sourceTile("Settings", null, Ui.SUB, "⚙", 18, v -> host.openSettings()),
                 Ui.lp(dp(130), dp(150)));
         root.addView(top);
@@ -77,18 +77,21 @@ public final class WallLayout extends HomeLayout {
         root.addView(grid);
 
         if (prefs.showAppRow()) {
+            // Heading with a "See all" button on its right, lined up with the end of the page.
             LinearLayout appsHead = new LinearLayout(c);
-            appsHead.setGravity(Gravity.CENTER_VERTICAL);
+            appsHead.setGravity(Gravity.BOTTOM);
+            appsHead.setClipChildren(false);
             appsHead.addView(section("All Apps"), Ui.lpWeight(0, -2, 1));
-            root.addView(appsHead);
-            root.addView(appRow(12));
             LinearLayout more = Ui.card(c, LinearLayout.HORIZONTAL, Ui.SUB);
-            more.setPadding(dp(16), dp(8), dp(16), dp(8));
-            TextView mt = Ui.text(c, 14, Ui.TEXT, true);
-            mt.setText("All apps  ›");
+            more.setGravity(Gravity.CENTER_VERTICAL);
+            more.setPadding(dp(18), dp(9), dp(18), dp(9));
+            TextView mt = Ui.text(c, 15, Ui.TEXT, true);
+            mt.setText("See all  ›");
             more.addView(mt);
             more.setOnClickListener(v -> host.openApps());
-            root.addView(more, Ui.margins(Ui.lp(-2, -2), 0, dp(6), 0, 0));
+            appsHead.addView(more, Ui.margins(Ui.lp(-2, -2), 0, 0, 0, dp(8)));
+            root.addView(appsHead);
+            root.addView(appRow(12));
         }
         sv.addView(root);
         return sv;

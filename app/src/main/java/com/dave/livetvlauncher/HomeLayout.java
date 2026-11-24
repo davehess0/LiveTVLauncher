@@ -232,7 +232,7 @@ public abstract class HomeLayout {
         int n = 0;
         for (Apps.AppEntry e : apps) {
             if (n++ >= max) break;
-            row.addView(appTile(e), Ui.margins(Ui.lp(dp(160), dp(90)), 0, 0, dp(14), 0));
+            row.addView(appTile(e), Ui.margins(Ui.lp(dp(160), dp(90)), 0, 0, dp(24), 0));
         }
         sv.addView(row);
         return bleed(sv);

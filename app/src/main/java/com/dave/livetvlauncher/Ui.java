@@ -36,6 +36,9 @@ public final class Ui {
     /** Left / right page margin (dp). Scrolling rows run past it to the screen edges. */
     public static final int SIDE_DP = 28;
 
+    /** The most a focused tile grows past each edge (dp), however big it is. */
+    public static final int MAX_GROW_DP = 10;
+
     private Ui() {}
 
     public static int dp(Context c, float v) {
@@ -161,7 +164,14 @@ public final class Ui {
 
     public static void lift(View view, boolean has, float focusScale) {
         if (has) unclipPadding(view);
-        float scale = has ? focusScale : 1f;
+        // Wide tiles grow by at most MAX_GROW_DP on each side, so a double-width tile doesn't spill
+        // into its neighbour; small tiles still get the full zoom.
+        float scale = 1f;
+        if (has && focusScale > 1f) {
+            int w = Math.max(view.getWidth(), view.getHeight());
+            float cap = w > 0 ? 1f + 2f * dp(view.getContext(), MAX_GROW_DP) / w : focusScale;
+            scale = Math.min(focusScale, cap);
+        }
         view.animate().scaleX(scale).scaleY(scale).translationZ(has ? dp(view.getContext(), 18) : 0)
                 .setDuration(160).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
     }
