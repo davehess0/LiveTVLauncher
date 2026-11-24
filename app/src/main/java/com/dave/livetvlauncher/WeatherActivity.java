@@ -71,7 +71,7 @@ public final class WeatherActivity extends Activity {
         prefs = new Prefs(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Ui.BG);
+        root.setBackground(Ui.pageBackground());
         int p = Ui.dp(this, 40);
         root.setPadding(p, Ui.dp(this, 28), p, Ui.dp(this, 24));
 

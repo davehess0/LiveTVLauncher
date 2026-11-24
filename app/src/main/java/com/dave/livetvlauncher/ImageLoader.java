@@ -52,18 +52,47 @@ public final class ImageLoader {
      * blown-up, pixelated copy.
      */
     public static void loadBackdrop(final ImageView view, final String url, final int screenPx) {
+        loadBackdrop(view, url, screenPx, null);
+    }
+
+    /** Called on the main thread with the shown picture's average color. */
+    public interface ColorListener { void onColor(int averageColor); }
+
+    private static final LruCache<String, Integer> AVERAGES = new LruCache<>(64);
+
+    /** As above, and also reports the picture's average color (used to tint the ground). */
+    public static void loadBackdrop(final ImageView view, final String url, final int screenPx, final ColorListener colors) {
         view.setTag(url);
         if (url == null) { view.setImageDrawable(null); return; }
         Bitmap hit = BACKDROPS.get(url);
-        if (hit != null) { view.setImageBitmap(hit); return; }
+        Integer avg = AVERAGES.get(url);
+        if (hit != null) {
+            view.setImageBitmap(hit);
+            if (colors != null && avg != null) colors.onColor(avg);
+            return;
+        }
         POOL.execute(() -> {
             Bitmap b = fetch(url, screenPx);
             if (b == null) return;
             Bitmap shown = b.getWidth() >= SHARP_MIN_WIDTH ? b : blurred(b);
             if (shown != b) b.recycle();
+            int average = average(shown);
             BACKDROPS.put(url, shown);
-            MAIN.post(() -> { if (url.equals(view.getTag())) view.setImageBitmap(shown); });
+            AVERAGES.put(url, average);
+            MAIN.post(() -> {
+                if (!url.equals(view.getTag())) return;
+                view.setImageBitmap(shown);
+                if (colors != null) colors.onColor(average);
+            });
         });
+    }
+
+    /** The picture's average color, from a tiny copy of it. */
+    private static int average(Bitmap b) {
+        Bitmap t = Bitmap.createScaledBitmap(b, 1, 1, true);
+        int c = t.getPixel(0, 0);
+        if (t != b) t.recycle();
+        return c;
     }
 
     /**

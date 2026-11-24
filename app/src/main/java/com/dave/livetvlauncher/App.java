@@ -7,5 +7,6 @@ public final class App extends Application {
     @Override public void onCreate() {
         super.onCreate();
         AppLog.init(this);
+        Ui.applyTheme(new Prefs(this).theme());
     }
 }

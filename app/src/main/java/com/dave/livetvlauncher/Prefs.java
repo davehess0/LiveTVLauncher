@@ -144,6 +144,10 @@ public final class Prefs {
     public boolean showAppRow() { return sp.getBoolean("showAppRow", true); }
     public void setShowAppRow(boolean v) { sp.edit().putBoolean("showAppRow", v).apply(); }
 
+    /** The look: one of Ui.THEMES. */
+    public String theme() { return sp.getString("theme", Ui.THEME_CLASSIC); }
+    public void setTheme(String v) { sp.edit().putString("theme", v).apply(); }
+
     public boolean clock24h() { return sp.getBoolean("clock24h", false); }
     public void setClock24h(boolean v) { sp.edit().putBoolean("clock24h", v).apply(); }
 

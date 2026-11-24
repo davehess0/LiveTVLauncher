@@ -16,6 +16,7 @@ public final class AppsActivity extends Activity {
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        getWindow().setBackgroundDrawable(Ui.pageBackground());
         ScrollView sv = new ScrollView(this);
         sv.setClipChildren(false);
         sv.setVerticalScrollBarEnabled(false);

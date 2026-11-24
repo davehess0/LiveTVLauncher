@@ -21,7 +21,14 @@ The design is inspired by Apple TV:
 - **Focus:** the selected item lifts, grows and gets a soft white glow that fades out around it. Text keeps its colors.
 - **Streaming apps:** shown as their banners only, with no names underneath.
 
-All of the colors are in `Ui.java` if you want to tune them.
+**Colors:** pick a look in ⚙ Settings → Home screen → **Colors**. It changes every screen at once.
+- **Classic black:** near-black with grey glass (the original look).
+- **Midnight blue:** deep blue-black with a soft blue glow and blue-tinted glass, like Google TV and Plex.
+- **Colors from the show:** the background takes its color from the art of whatever is selected, so the screen changes mood as you move around.
+- **Deep teal:** a dark blue-green slate with teal glass and accents.
+- **Liquid Glass:** modeled on Apple TV's tvOS 26: clear glass tiles with a bright rim, and more of the selected show's art showing through, tinted from it.
+
+Each profile keeps its own choice. The colors for each look are in `Ui.applyTheme()` if you want to tune them.
 
 ## Set up from your phone
 

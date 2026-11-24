@@ -237,7 +237,7 @@ public final class GuideLayout extends HomeLayout {
         LinearLayout hero = new LinearLayout(c);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setPadding(dp(24), dp(22), dp(24), dp(22));
-        hero.setBackground(Ui.rounded(0x1FFFFFFF, dp(24), 0, 0));
+        hero.setBackground(Ui.glass(c, Ui.PANEL, dp(24), false));
         // Live preview window (16:9-ish): the channel logo sits in it until the video starts.
         previewBox = new android.widget.FrameLayout(c);
         previewBox.setBackground(Ui.rounded(0xFF000000, dp(14), 0, 0));

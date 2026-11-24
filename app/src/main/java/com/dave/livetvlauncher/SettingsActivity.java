@@ -20,6 +20,7 @@ public final class SettingsActivity extends Activity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = new Prefs(this);
+        getWindow().setBackgroundDrawable(Ui.pageBackground());
         ScrollView sv = new ScrollView(this);
         sv.setClipChildren(false);
         list = new LinearLayout(this);
@@ -47,7 +48,7 @@ public final class SettingsActivity extends Activity {
         list.addView(title);
 
         row("Set up from your phone", "Scan a QR code to enter addresses on your phone", v -> showPhoneSetup());
-        group("Home screen", layoutName(prefs.layout()) + " · " + (prefs.clock24h() ? "24-hour" : "12-hour") + " clock", () -> {
+        group("Home screen", layoutName(prefs.layout()) + " · " + Ui.themeName(prefs.theme()), () -> {
             row("Home screen layout", layoutName(prefs.layout()), v -> {
                 String l = prefs.layout();
                 prefs.setLayout(Prefs.LAYOUT_GUIDE.equals(l) ? Prefs.LAYOUT_WALL
@@ -58,6 +59,15 @@ public final class SettingsActivity extends Activity {
                     v -> startActivity(new android.content.Intent(this, AppsActivity.class)));
             row("Apps row on Channel Wall", prefs.showAppRow() ? "Shown" : "Hidden", v -> {
                 prefs.setShowAppRow(!prefs.showAppRow());
+                render();
+            });
+            row("Colors", Ui.themeName(prefs.theme()), v -> {
+                String[] all = Ui.THEMES;
+                int i = java.util.Arrays.asList(all).indexOf(prefs.theme());
+                String next = all[(i + 1) % all.length];
+                prefs.setTheme(next);
+                Ui.applyTheme(next);
+                getWindow().setBackgroundDrawable(Ui.pageBackground());
                 render();
             });
             row("Clock", prefs.clock24h() ? "24-hour" : "12-hour", v -> {

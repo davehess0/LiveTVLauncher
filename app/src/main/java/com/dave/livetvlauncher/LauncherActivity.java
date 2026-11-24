@@ -24,6 +24,41 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private FrameLayout container, content;
+    private View ground;
+    private GradientDrawable scrim;
+    /** The ground color now showing (art-driven looks change it as you move around). */
+    private int groundColor;
+    private String lookApplied = "";
+    private android.animation.ValueAnimator groundFade;
+
+    /** Sets the ground, its glow and the darkening over the art for the chosen look. */
+    private void applyLook() {
+        lookApplied = Ui.theme();
+        ground.setBackground(Ui.pageBackground());
+        groundColor = Ui.BG;
+        setScrim(Ui.BG);
+        if (backdrop.getAlpha() > 0) backdrop.setAlpha(Ui.ART_STRENGTH);
+    }
+
+    private void setScrim(int color) {
+        int[] a = Ui.SCRIM_ALPHA;
+        scrim.setColors(new int[]{Ui.withAlpha(color, a[0]), Ui.withAlpha(color, a[1]), Ui.withAlpha(color, a[2])});
+    }
+
+    /** Art-driven looks: fade the ground and the darkening over to a color taken from the art. */
+    private void tintGround(int averageColor) {
+        if (!Ui.GROUND_FROM_ART) return;
+        int to = Ui.groundFromArt(averageColor);
+        if (groundFade != null) groundFade.cancel();
+        groundFade = android.animation.ValueAnimator.ofArgb(groundColor, to);
+        groundFade.setDuration(600);
+        groundFade.addUpdateListener(an -> {
+            groundColor = (int) an.getAnimatedValue();
+            ground.setBackgroundColor(groundColor);
+            setScrim(groundColor);
+        });
+        groundFade.start();
+    }
     private android.widget.ImageView backdrop;
     private String backdropUrl;
     private final Runnable applyBackdrop = this::swapBackdrop;
@@ -118,16 +153,19 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         super.onCreate(b);
         prefs = new Prefs(this);
         container = new FrameLayout(this);
-        container.setBackgroundColor(Ui.BG);
+        // The ground (and its corner glow) follow the chosen look; see applyLook().
+        ground = new View(this);
+        container.addView(ground, new FrameLayout.LayoutParams(-1, -1));
         // Apple TV-style backdrop: art for whatever is focused, soft and dimmed behind everything.
         backdrop = new android.widget.ImageView(this);
         backdrop.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
         backdrop.setAlpha(0f);
         container.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
-        View scrim = new View(this);
-        scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x99000000, 0xCC0A0A0C, 0xF20A0A0C}));
-        container.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+        scrim = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0, 0, 0});
+        View scrimView = new View(this);
+        scrimView.setBackground(scrim);
+        container.addView(scrimView, new FrameLayout.LayoutParams(-1, -1));
+        applyLook();
         content = new FrameLayout(this);
         container.addView(content, new FrameLayout.LayoutParams(-1, -1));
         setContentView(container);
@@ -147,6 +185,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        if (!lookApplied.equals(Ui.theme())) applyLook(); // the look was changed in Settings
         maybeStartOnLastChannel(); // channels may already be loaded
         if (!signature().equals(builtSignature)) rebuild();
         else if (current != null) current.tick();
@@ -226,7 +265,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     };
 
     private String signature() {
-        return prefs.pinnedApps() + "|" + prefs.layout() + "|" + prefs.showAppRow() + "|" + prefs.favoritesOnly() + "|" + prefs.clock24h() + "|" + guideOverlay
+        return prefs.pinnedApps() + "|" + Ui.theme() + "|" + prefs.layout() + "|" + prefs.showAppRow() + "|" + prefs.favoritesOnly() + "|" + prefs.clock24h() + "|" + guideOverlay
                 + "|" + prefs.cameras().isEmpty() + "|" + prefs.livePreview();
     }
 
@@ -259,8 +298,8 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         backdrop.animate().alpha(0f).setDuration(180).withEndAction(() -> {
             // Full-size art is shown sharp; small pictures become a smooth blur rather than a pixelated stretch.
             android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
-            ImageLoader.loadBackdrop(backdrop, url, Math.max(dm.widthPixels, dm.heightPixels));
-            backdrop.animate().alpha(0.55f).setDuration(420).start();
+            ImageLoader.loadBackdrop(backdrop, url, Math.max(dm.widthPixels, dm.heightPixels), this::tintGround);
+            backdrop.animate().alpha(Ui.ART_STRENGTH).setDuration(420).start();
         }).start();
     }
 
