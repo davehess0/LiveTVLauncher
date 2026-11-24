@@ -126,6 +126,9 @@ public final class GuideLayout extends HomeLayout {
         this.asOverlay = asOverlay;
     }
 
+    /** How far (dp) the channel list fades out at its top and bottom edges. */
+    private static final int FADE_DP = 56;
+
     @Override public View create() {
         LinearLayout root = new LinearLayout(c);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -166,12 +169,42 @@ public final class GuideLayout extends HomeLayout {
         body.setClipChildren(true);
 
         scroll = new ScrollView(c) {
-            // Scrolling keeps the selected row this far from the top and bottom edges, so it's never
-            // cut off by the bottom of the screen and its glow has room.
+            private final android.graphics.Paint fade = new android.graphics.Paint();
+            { fade.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT)); }
+
+            // Scrolling keeps the selected row clear of the faded edges, so it's never cut off and its
+            // glow has room.
             @Override protected int computeScrollDeltaToGetChildRectOnScreen(android.graphics.Rect rect) {
                 android.graphics.Rect roomy = new android.graphics.Rect(rect);
-                roomy.inset(0, -dp(36));
+                roomy.inset(0, -dp(FADE_DP + 8));
                 return super.computeScrollDeltaToGetChildRectOnScreen(roomy);
+            }
+
+            /**
+             * Rows fade out at the top and bottom of the list instead of being cut off by a hard line.
+             * Android's own fading edge stops at the padding and would cut the selected row's glow, so
+             * this fades the whole width of the list instead.
+             */
+            @Override protected void dispatchDraw(android.graphics.Canvas canvas) {
+                int w = getWidth(), h = getHeight(), y = getScrollY();
+                View child = getChildAt(0);
+                boolean moreAbove = y > 0;
+                boolean moreBelow = child != null && y + h < child.getBottom() + getPaddingBottom();
+                if (!moreAbove && !moreBelow) { super.dispatchDraw(canvas); return; }
+                float len = dp(FADE_DP);
+                int save = canvas.saveLayer(0, y, w, y + h, null);
+                super.dispatchDraw(canvas);
+                if (moreAbove) {
+                    fade.setShader(new android.graphics.LinearGradient(0, y, 0, y + len, 0xFF000000, 0x00000000,
+                            android.graphics.Shader.TileMode.CLAMP));
+                    canvas.drawRect(0, y, w, y + len, fade);
+                }
+                if (moreBelow) {
+                    fade.setShader(new android.graphics.LinearGradient(0, y + h - len, 0, y + h, 0x00000000, 0xFF000000,
+                            android.graphics.Shader.TileMode.CLAMP));
+                    canvas.drawRect(0, y + h - len, w, y + h, fade);
+                }
+                canvas.restoreToCount(save);
             }
         };
         // The body (above) cuts the list off at the list's own edges, so rows scrolled out of view don't
