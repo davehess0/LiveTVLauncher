@@ -45,12 +45,15 @@ final class Updater {
 
     interface Progress { void update(long done, long total); }
 
-    /** Reason this profile can't install updates, or null if it can. */
+    /**
+     * Reason this profile can't install updates, or null if it can. Only Android's own install
+     * restrictions count: a restricted profile (e.g. on the Shield) is usually allowed to install, and
+     * an update installed from any profile replaces the app for every profile.
+     */
     static String blockedReason(Context ctx) {
         UserManager um = (UserManager) ctx.getSystemService(Context.USER_SERVICE);
         if (um != null && (um.hasUserRestriction(UserManager.DISALLOW_INSTALL_APPS)
-                || um.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
-                || !um.isSystemUser() && um.getUserRestrictions().getBoolean(UserManager.DISALLOW_MODIFY_ACCOUNTS, false))) {
+                || um.hasUserRestriction(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES))) {
             return "This profile isn't allowed to install apps. Switch to the main profile, open Live TV Home there "
                     + "(from its app list) and check for updates in its Settings. The update then applies to every profile.";
         }

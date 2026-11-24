@@ -57,7 +57,7 @@ Add cameras in ⚙ Settings → **Cameras** → **Add camera**: give each one a 
 
 ## Updating the app
 
-Updates install from inside the app, with no computer or `adb` needed. Do this from the **main profile**: a restricted profile can't install apps, and the update applies to every profile anyway.
+Updates install from inside the app, with no computer or `adb` needed. It works from the main profile or the restricted profile, and the update applies to every profile. On the Shield the restricted profile is allowed to install apps; if Android blocks installs in a profile, the app says so and you update from the main profile instead.
 
 - **From the TV:** ⚙ Settings → System → **Check for updates**. It asks this repo's GitHub Releases for the newest version, shows its notes, and on **Install** downloads the APK and hands it to Android, which asks you to confirm. The launcher then restarts on the new version with all settings kept.
 - **From your phone:** download the APK to your phone, open ⚙ Settings → **Set up from your phone**, scan the code and use **Install an update** at the bottom of the page. Confirm on the TV. This needs no token.
@@ -65,7 +65,8 @@ Updates install from inside the app, with no computer or `adb` needed. Do this f
   - paste it into **GitHub token** on the phone setup page. It's stored only on the TV and never shown again, and ⚙ Settings → System → GitHub token can remove it. Or:
   - add `githubToken=github_pat_…` to `local.properties` (never committed). Every APK you build then carries it, and a token set on the TV takes priority. Anyone holding that APK file could pull the token out of it, which is why it should be read-only and limited to this one repo.
   The token is only sent to `api.github.com`, and the log masks it.
-- **The first time,** Android asks you to let Live TV Home install apps. Settings walks you there (on the Shield: Device Preferences → Security & restrictions → Unknown sources → Live TV Home).
+- **The first time,** Android asks you to let Live TV Home install apps. Settings walks you there (on the Shield: Device Preferences → Security & restrictions → Unknown sources → Live TV Home). This is a separate switch in each profile, so turn it on in every profile you'll update from.
+- **Restricted profile:** anyone using it can install updates, but only genuine Live TV Home updates signed with your key. Set a Settings PIN if you want to control who can.
 - **Safety checks:** before installing, the app checks that the APK is Live TV Home, isn't older than what's installed, and is signed with the same key. If any check fails, it explains why and installs nothing.
 
 **Publishing an update:**
