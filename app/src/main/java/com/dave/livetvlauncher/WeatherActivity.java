@@ -44,7 +44,8 @@ public final class WeatherActivity extends Activity {
     private static final long FRAME_MS = 500, HOLD_LAST_MS = 1800;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private final ExecutorService net = Executors.newFixedThreadPool(4);
+    // Radar frames need a few hundred small map pieces; fetch plenty at once so the loop starts quickly.
+    private final ExecutorService net = Executors.newFixedThreadPool(8);
     private Prefs prefs;
     private TextView tabForecast, tabRadar, radarTime;
     private LinearLayout forecastView;
@@ -366,13 +367,18 @@ public final class WeatherActivity extends Activity {
                             radarTime.setText(timeLabel(when, false));
                             radarTime.setVisibility(View.VISIBLE);
                         }
+                        // Start the loop as soon as there are two frames; it grows as the rest arrive.
+                        if (frames.size() == 2 && radarView.getVisibility() == View.VISIBLE) {
+                            ui.removeCallbacks(animate);
+                            ui.postDelayed(animate, FRAME_MS);
+                        }
                     });
                 }
                 ui.post(() -> {
                     if (closed || frames.isEmpty()) return;
                     AppLog.i("Weather", "Radar loaded: " + frames.size() + " frames");
-                    frame = frames.size() - 1;
-                    if (radarView.getVisibility() == View.VISIBLE) { ui.removeCallbacks(animate); ui.post(animate); }
+                    // Make sure the loop is running (restarting it is harmless).
+                    if (frames.size() > 1 && radarView.getVisibility() == View.VISIBLE) { ui.removeCallbacks(animate); ui.post(animate); }
                 });
             } catch (Exception e) {
                 AppLog.w("Weather", "Radar failed (" + e.getClass().getSimpleName() + ")");
