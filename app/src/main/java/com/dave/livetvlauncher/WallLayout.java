@@ -17,7 +17,7 @@ public final class WallLayout extends HomeLayout {
     private static final int COLUMNS = 5;
 
     private TextView status, clock, weather;
-    private LinearLayout resumeTile, plexTile, hdhrTile;
+    private LinearLayout resumeTile, hdhrTile;
     private LinearLayout grid, plexBox, recent;
     private final List<Card> cards = new ArrayList<>();
 
@@ -51,11 +51,8 @@ public final class WallLayout extends HomeLayout {
         resumeTile = sourceTile("Resume", "Last channel", Ui.LIVE_RED, "●", 22, v -> host.resumeLastChannel());
         hdhrTile = sourceTile("HDHomeRun", Apps.installed(c, Apps.HDHR) ? "Live TV & DVR" : "Not available in this profile",
                 Ui.ACCENT, "▶", 22, v -> Apps.launch(host, Apps.HDHR));
-        plexTile = sourceTile("Plex Live TV", Apps.installed(c, Apps.PLEX) ? "Live TV & DVR" : "Not available in this profile",
-                Ui.PLEX, "▶", 22, v -> Apps.launch(host, Apps.PLEX));
         top.addView(resumeTile, Ui.margins(Ui.lpWeight(0, dp(150), 1.3f), 0, 0, dp(18), 0));
         top.addView(hdhrTile, Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(18), 0));
-        top.addView(plexTile, Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(18), 0));
         if (host.hasCameras()) top.addView(sourceTile("Cameras", "Live view", Ui.LIVE_RED, "◉", 22, v -> host.openCameras()),
                 Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(18), 0));
         top.addView(sourceTile("Settings", null, Ui.SUB, "⚙", 18, v -> host.openSettings()),

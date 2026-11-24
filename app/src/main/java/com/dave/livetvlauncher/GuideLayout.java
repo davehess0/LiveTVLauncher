@@ -153,7 +153,7 @@ public final class GuideLayout extends HomeLayout {
         top.addView(pill("Settings", v -> host.openSettings()), pillLp());
         top.addView(new View(c), Ui.lpWeight(0, 1, 1));
         weather = weatherLabel(20);
-        top.addView(weather);
+        top.addView(weather, weatherLp());
         clock = Ui.text(c, 20, Ui.TEXT, true);
         top.addView(clock);
         root.addView(top);

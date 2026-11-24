@@ -155,7 +155,7 @@ public abstract class HomeLayout {
         h.addView(t, Ui.lpWeight(0, -2, 1));
         statusOut.setPadding(0, 0, dp(20), 0);
         h.addView(statusOut);
-        h.addView(weatherOut);
+        h.addView(weatherOut, weatherLp());
         h.addView(clockOut);
         return h;
     }
@@ -180,10 +180,15 @@ public abstract class HomeLayout {
         label.setVisibility(problem ? View.VISIBLE : View.INVISIBLE);
     }
 
+    /** Space between the weather label and the clock, so the selected label's lift and glow clear the clock. */
+    protected LinearLayout.LayoutParams weatherLp() {
+        return Ui.margins(Ui.lp(-2, -2), 0, 0, dp(16), 0);
+    }
+
     /** Label for the current weather, placed just before the clock. Hidden until weather is set up. */
     protected TextView weatherLabel(float sp) {
         TextView t = Ui.text(c, sp, Ui.TEXT, true);
-        t.setPadding(dp(12), dp(4), dp(12), dp(4));
+        t.setPadding(dp(14), dp(6), dp(14), dp(6));
         t.setVisibility(View.GONE);
         // Select (remote) or tap it for the 10-day forecast and radar.
         t.setFocusable(true);
