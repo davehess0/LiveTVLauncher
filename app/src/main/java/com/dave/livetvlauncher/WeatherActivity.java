@@ -72,16 +72,17 @@ public final class WeatherActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(Ui.pageBackground());
-        int p = Ui.dp(this, 40);
-        root.setPadding(p, Ui.dp(this, 28), p, Ui.dp(this, 24));
+        root.setClipChildren(false);
+        root.setClipToPadding(false);
+        root.setPadding(Ui.dp(this, Ui.SIDE_DP), Ui.dp(this, 22), Ui.dp(this, Ui.SIDE_DP), Ui.dp(this, 20));
 
         // Header: place + current conditions.
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = Ui.text(this, 26, Ui.TEXT, true);
+        TextView title = Ui.text(this, 22, Ui.TEXT, true);
         title.setText(prefs.weatherPlace().isEmpty() ? "Weather" : prefs.weatherPlace());
         head.addView(title, Ui.lpWeight(0, -2, 1));
-        TextView now = Ui.text(this, 26, Ui.TEXT, true);
+        TextView now = Ui.text(this, 22, Ui.TEXT, true);
         now.setText(Weather.get().text(prefs));
         head.addView(now);
         root.addView(head);
@@ -115,7 +116,8 @@ public final class WeatherActivity extends Activity {
 
         // Tabs.
         LinearLayout tabs = new LinearLayout(this);
-        tabs.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 18));
+        tabs.setClipChildren(false);
+        tabs.setPadding(0, Ui.dp(this, 20), 0, Ui.dp(this, 20));
         tabForecast = tab("10-day forecast", v -> show(false));
         tabRadar = tab("Radar", v -> show(true));
         tabs.addView(tabForecast, Ui.margins(Ui.lp(-2, -2), 0, 0, Ui.dp(this, 12), 0));
@@ -124,7 +126,7 @@ public final class WeatherActivity extends Activity {
 
         FrameLayout body = new FrameLayout(this);
         forecastView = new LinearLayout(this);
-        forecastView.setGravity(Gravity.CENTER_VERTICAL);
+        forecastView.setGravity(Gravity.TOP);
         body.addView(forecastView, new FrameLayout.LayoutParams(-1, -1));
         radarView = buildRadarView();
         radarView.setVisibility(View.GONE);
@@ -149,15 +151,21 @@ public final class WeatherActivity extends Activity {
         super.onDestroy();
     }
 
+    /** A tab: a glass pill like the Guide's buttons. Focus follows the open tab, so it carries the glow. */
     private TextView tab(String label, View.OnClickListener click) {
-        TextView t = Ui.text(this, 17, Ui.TEXT, true);
+        TextView t = Ui.text(this, 16, Ui.TEXT, true);
         t.setText(label);
-        t.setPadding(Ui.dp(this, 22), Ui.dp(this, 10), Ui.dp(this, 22), Ui.dp(this, 10));
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(Ui.dp(this, 20), Ui.dp(this, 9), Ui.dp(this, 20), Ui.dp(this, 9));
+        t.setBackground(Ui.glassWithGlow(this, Ui.dp(this, 20), Ui.CARD));
         t.setFocusable(true);
         t.setClickable(true);
-        t.setDefaultFocusHighlightEnabled(false); // the white pill already shows which tab is on
+        t.setDefaultFocusHighlightEnabled(false);
         t.setOnClickListener(click);
-        t.setOnFocusChangeListener((v, has) -> { if (has) click.onClick(v); });
+        t.setOnFocusChangeListener((v, has) -> {
+            if (has) click.onClick(v);
+            Ui.lift(v, has, 1.06f);
+        });
         return t;
     }
 
@@ -171,9 +179,9 @@ public final class WeatherActivity extends Activity {
         if (!radar) ui.removeCallbacks(animate);
     }
 
+    /** The open tab reads at full strength; the other is dimmed. (The glow comes from focus.) */
     private void styleTab(TextView t, boolean on) {
-        t.setBackground(Ui.rounded(on ? Ui.TEXT : 0x33FFFFFF, Ui.dp(this, 22), 0, 0));
-        t.setTextColor(on ? 0xFF000000 : Ui.TEXT);
+        t.setTextColor(on ? Ui.TEXT : Ui.SUB);
     }
 
     /**
@@ -223,9 +231,9 @@ public final class WeatherActivity extends Activity {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setGravity(Gravity.CENTER_HORIZONTAL);
-            card.setPadding(Ui.dp(this, 6), Ui.dp(this, 18), Ui.dp(this, 6), Ui.dp(this, 18));
-            card.setBackground(Ui.rounded(i == 0 ? 0x33FFFFFF : 0x1AFFFFFF, Ui.dp(this, 18), 0, 0));
-            TextView name = Ui.text(this, 17, Ui.TEXT, true);
+            card.setPadding(Ui.dp(this, 6), Ui.dp(this, 20), Ui.dp(this, 6), Ui.dp(this, 20));
+            card.setBackground(Ui.glass(this, i == 0 ? Ui.CARD_FOCUS : Ui.CARD, Ui.dp(this, 18), false));
+            TextView name = Ui.text(this, 17, i == 0 ? Ui.ACCENT : Ui.TEXT, true);
             name.setText(i == 0 ? "Today" : dow.format(day.date));
             card.addView(name);
             TextView date = Ui.text(this, 12, Ui.SUB, false);
@@ -246,7 +254,7 @@ public final class WeatherActivity extends Activity {
             what.setGravity(Gravity.CENTER);
             what.setPadding(0, Ui.dp(this, 8), 0, 0);
             card.addView(what);
-            TextView rain = Ui.text(this, 13, 0xFF64B5F6, true);
+            TextView rain = Ui.text(this, 13, Ui.ACCENT, true);
             rain.setText(day.rainChance >= 10 ? "💧 " + day.rainChance + "%" : " ");
             rain.setPadding(0, Ui.dp(this, 6), 0, 0);
             card.addView(rain);
@@ -257,21 +265,24 @@ public final class WeatherActivity extends Activity {
     // ---- Radar ----
 
     private FrameLayout buildRadarView() {
+        // Same treatment as the Guide's preview panel: a glass frame with the map inset and rounded.
         FrameLayout f = new FrameLayout(this);
-        f.setBackground(Ui.rounded(0xFF101014, Ui.dp(this, 18), 0, 0));
-        f.setClipToOutline(true);
+        int pad = Ui.dp(this, 12);
+        f.setPadding(pad, pad, pad, pad);
+        f.setBackground(Ui.glass(this, Ui.PANEL, Ui.dp(this, 24), false));
         radarImage = new ImageView(this);
         radarImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        radarImage.setBackgroundColor(0xFF101014);
+        Ui.roundCorners(radarImage, Ui.dp(this, 14));
         f.addView(radarImage, new FrameLayout.LayoutParams(-1, -1));
         radarSpinner = new ProgressBar(this, null, android.R.attr.progressBarStyleLarge);
         radarSpinner.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(Ui.TEXT));
         f.addView(radarSpinner, new FrameLayout.LayoutParams(Ui.dp(this, 56), Ui.dp(this, 56), Gravity.CENTER));
         radarTime = Ui.text(this, 16, Ui.TEXT, true);
-        radarTime.setShadowLayer(6, 0, 1, 0xFF000000);
-        radarTime.setBackground(Ui.rounded(0x99000000, Ui.dp(this, 10), 0, 0));
-        radarTime.setPadding(Ui.dp(this, 12), Ui.dp(this, 6), Ui.dp(this, 12), Ui.dp(this, 6));
+        radarTime.setBackground(Ui.glass(this, Ui.withAlpha(Ui.BG, 0xD9), Ui.dp(this, 16), false));
+        radarTime.setPadding(Ui.dp(this, 14), Ui.dp(this, 7), Ui.dp(this, 14), Ui.dp(this, 7));
         FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
-        tl.setMargins(0, Ui.dp(this, 14), Ui.dp(this, 14), 0);
+        tl.setMargins(0, Ui.dp(this, 24), Ui.dp(this, 24), 0);
         radarTime.setVisibility(View.GONE); // shown once there is a time to show
         f.addView(radarTime, tl);
         return f;
