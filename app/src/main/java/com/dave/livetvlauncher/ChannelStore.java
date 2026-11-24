@@ -32,7 +32,11 @@ public final class ChannelStore {
     /** Retry delays after a failure; the last one repeats until the source is back. */
     private static final long[] RETRY_MS = {30_000L, 60_000L, 2 * 60_000L, 5 * 60_000L};
     /** Last channels that loaded from each source, kept through short outages. */
-    private volatile List<Channel> lastHdhr = Collections.emptyList(), lastTunarr = Collections.emptyList();
+    private volatile List<Channel> lastHdhr = Collections.emptyList(), lastTunarr = Collections.emptyList(),
+            lastIptv = Collections.emptyList();
+    /** Groups in the IPTV playlist (for the group picker in Settings). */
+    private volatile List<String> iptvGroups = Collections.emptyList();
+    public List<String> iptvGroups() { return iptvGroups; }
 
     public List<Channel> all() { return all; }
     public String status() { return status; }
@@ -40,7 +44,7 @@ public final class ChannelStore {
 
     /**
      * Favorites if the user wants them and any exist; otherwise everything.
-     * Tunarr channels have no favorites (they're hand-picked already), so they always stay.
+     * Tunarr and IPTV channels have no favorites (they're hand-picked already), so they always stay.
      */
     public List<Channel> visible(Prefs prefs) {
         List<Channel> src = all;
@@ -49,7 +53,7 @@ public final class ChannelStore {
         boolean anyFavorite = false;
         for (Channel c : src) {
             if (c.favorite) anyFavorite = true;
-            if (c.favorite || c.tunarr) fav.add(c);
+            if (c.favorite || c.tunarr || c.iptv) fav.add(c);
         }
         return anyFavorite ? fav : src;
     }
@@ -78,6 +82,8 @@ public final class ChannelStore {
         final Prefs prefs = new Prefs(ctx);
         final String ip = prefs.tunerIp();
         final String tunarrUrl = prefs.tunarrUrl();
+        final String iptvUrl = prefs.iptvUrl(), iptvGuide = prefs.iptvGuideUrl();
+        final java.util.Set<String> hiddenGroups = prefs.iptvHiddenGroups();
         io.execute(() -> {
             try {
                 // Antenna tuner and Tunarr load independently, so either one still works if the other is down.
@@ -129,12 +135,37 @@ public final class ChannelStore {
                 } else {
                     lastTunarr = Collections.emptyList();
                 }
+                String iptvStatus = "";
+                boolean iptvFailed = false;
+                if (!iptvUrl.isEmpty()) {
+                    java.util.Set<String> taken = new java.util.HashSet<>();
+                    for (Channel c : merged) taken.add(c.number);
+                    try {
+                        IptvClient.Result r = IptvClient.load(iptvUrl, iptvGuide, hiddenGroups, taken);
+                        lastIptv = r.channels;
+                        iptvGroups = Collections.unmodifiableList(new ArrayList<>(r.groups));
+                        merged.addAll(r.channels);
+                        iptvStatus = " · " + r.channels.size() + " IPTV" + (r.guideFailed ? " (guide failed)" : "");
+                        if (r.droppedOverLimit > 0) AppLog.w("Channels", "IPTV: kept the first " + IptvClient.MAX_CHANNELS
+                                + " channels, left out " + r.droppedOverLimit + " (hide groups in Settings to choose)");
+                        AppLog.i("Channels", "IPTV: " + r.channels.size() + " channels, " + r.groups.size() + " groups, "
+                                + r.hiddenByGroup + " hidden by group · guide " + (r.guideUrl.isEmpty() ? "none" : AppLog.mask(r.guideUrl)));
+                    } catch (Exception e) {
+                        iptvFailed = true;
+                        AppLog.e("Channels", "IPTV playlist failed (" + AppLog.mask(iptvUrl) + "); keeping " + lastIptv.size() + " cached channels", e);
+                        for (Channel c : lastIptv) if (taken.add(c.number)) merged.add(c);
+                        iptvStatus = " · can't load IPTV playlist (retrying)";
+                    }
+                } else {
+                    lastIptv = Collections.emptyList();
+                    iptvGroups = Collections.emptyList();
+                }
                 if (merged.isEmpty()) throw hdhrError != null ? hdhrError : new Exception("No channels found");
                 java.util.Collections.sort(merged, java.util.Comparator.comparingDouble(Channel::sortKey));
                 all = Collections.unmodifiableList(merged);
-                status = hdhrStatus + tunarrStatus;
+                status = hdhrStatus + tunarrStatus + iptvStatus;
                 loadedAt = System.currentTimeMillis();
-                scheduleRetry(hdhrError != null || tunarrFailed);
+                scheduleRetry(hdhrError != null || tunarrFailed || iptvFailed);
                 AppLog.i("Channels", "Loaded " + merged.size() + " channels · " + status
                         + (retryAt > 0 ? " · next retry in " + (retryAt - loadedAt) / 1000 + " s" : ""));
             } catch (Exception e) {

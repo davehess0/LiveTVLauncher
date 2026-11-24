@@ -211,7 +211,8 @@ public final class PlayerActivity extends Activity {
         error.setVisibility(View.GONE);
         spinner.setVisibility(View.VISIBLE);
         ensureVlc();
-        playFrom(timeshift.offsetAt(streamTimeMs()));
+        if (direct || timeshift == null) playDirect();
+        else playFrom(timeshift.offsetAt(streamTimeMs()));
         setWantPlay(true);
     }
 
@@ -228,6 +229,12 @@ public final class PlayerActivity extends Activity {
     private Prefs prefs;
     /** Live TV plays from this on-disk buffer so it can be paused and rewound. */
     private Timeshift timeshift;
+    /**
+     * The channel is an adaptive stream (HLS / DASH) or RTMP / RTSP / UDP, e.g. from an IPTV playlist:
+     * it can't be recorded into the timeshift buffer, so it plays directly and pause / rewind use the
+     * stream's own live window instead.
+     */
+    private boolean direct;
     /** Broadcast time (wall-clock ms) at the start of the current media source. */
     private long startTimeMs;
     /** Within this of the live point counts as live (covers normal player buffering). */
@@ -625,6 +632,12 @@ public final class PlayerActivity extends Activity {
                     return;
                 }
                 if (decoderProblem) { switchLiveToVlc(e.getErrorCodeName()); return; }
+                if (direct && e.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                    // Paused or rewound past the start of the stream's live window: rejoin at live.
+                    player.seekToDefaultPosition();
+                    player.prepare();
+                    return;
+                }
                 retryOrFail(e.getErrorCodeName());
             }
 
@@ -836,9 +849,14 @@ public final class PlayerActivity extends Activity {
         player.stop();
         // A source that already needed VLC (e.g. MPEG-2 antenna channels on a tablet) goes straight to VLC.
         if (vlcSources.contains(sourceOf(urls[index]))) ensureVlc(); else releaseVlc();
-        if (timeshift != null) timeshift.stop();
-        timeshift = new Timeshift(getCacheDir(), urls[index]);
-        playFrom(0);
+        if (timeshift != null) { timeshift.stop(); timeshift = null; }
+        direct = IptvClient.isDirect(urls[index]);
+        if (direct) {
+            playDirect();
+        } else {
+            timeshift = new Timeshift(getCacheDir(), urls[index]);
+            playFrom(0);
+        }
         setWantPlay(true);
         showBanner();
     }
@@ -860,8 +878,37 @@ public final class PlayerActivity extends Activity {
         player.prepare();
     }
 
+    /** Plays a direct (non-recordable) stream from its live point. */
+    private void playDirect() {
+        startTimeMs = System.currentTimeMillis();
+        if (vlc != null) {
+            vlc.play(urls[index], 0);
+            return;
+        }
+        MediaItem.Builder mi = new MediaItem.Builder().setUri(urls[index]);
+        if (urls[index].toLowerCase(java.util.Locale.US).contains("m3u8")) mi.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+        player.setMediaItem(mi.build());
+        player.prepare();
+    }
+
+    /** How far a direct stream is behind its normal live point (0 = live). */
+    private long directBehindMs() {
+        if (vlc != null || player == null) return 0;
+        long off = player.getCurrentLiveOffset();
+        if (off == C.TIME_UNSET) return 0;
+        long target = C.TIME_UNSET;
+        androidx.media3.common.Timeline t = player.getCurrentTimeline();
+        if (!t.isEmpty()) {
+            androidx.media3.common.Timeline.Window w = t.getWindow(player.getCurrentMediaItemIndex(), new androidx.media3.common.Timeline.Window());
+            if (w.liveConfiguration != null) target = w.liveConfiguration.targetOffsetMs;
+        }
+        if (target == C.TIME_UNSET) target = 20_000; // a typical HLS live delay
+        return Math.max(0, off - target);
+    }
+
     /** The moment of the broadcast currently on screen (wall-clock ms). */
     private long streamTimeMs() {
+        if (direct) return System.currentTimeMillis() - directBehindMs();
         return startTimeMs + posMs();
     }
 
@@ -872,6 +919,16 @@ public final class PlayerActivity extends Activity {
 
     /** Rewind (negative) or skip ahead (positive) within the buffer; past the live point = go live. */
     private void seekBy(long deltaMs) {
+        if (direct) {
+            // Within the stream's own live window (often a few minutes for IPTV).
+            if (vlc != null) vlc.seekTo(Math.max(0, vlc.timeMs() + deltaMs));
+            else if (player != null) {
+                if (deltaMs > 0 && deltaMs >= directBehindMs() - LIVE_SLACK_MS) player.seekToDefaultPosition();
+                else player.seekTo(Math.max(0, player.getCurrentPosition() + deltaMs));
+            }
+            showBanner();
+            return;
+        }
         if ((player == null && vlc == null) || timeshift == null) return;
         long oldest = timeshift.oldestTimeMs();
         if (oldest < 0) return; // nothing recorded yet

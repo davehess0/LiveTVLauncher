@@ -3,7 +3,7 @@
 A home screen built around live TV from your **HDHomeRun**, with **Plex Live TV** one press away.
 Your streaming apps (YouTube, Prime Video, Disney+, Plex) and your Plex movies sit right on the home screen too.
 No ads, no tracking. The app only talks to your HDHomeRun tuner, `api.hdhomerun.com` for guide data,
-your Tunarr server if you add one, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, and, if you link Plex, your Plex server and `plex.tv` for the one-time sign-in.
+your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, and, if you link Plex, your Plex server and `plex.tv` for the one-time sign-in.
 
 ## The three layouts (switch any time in ⚙ Settings → Home screen layout)
 
@@ -27,7 +27,7 @@ All of the colors are in `Ui.java` if you want to tune them.
 
 Typing addresses with a remote is slow. Instead, go to ⚙ Settings → **Set up from your phone** and scan the QR code with your phone's camera. A settings page opens on your phone, where you can:
 - find your **HDHomeRun** on the network and pick it, or type its address
-- set the **Tunarr** and **Plex server** addresses
+- set the **Tunarr**, **IPTV playlist / guide** and **Plex server** addresses
 - set the **weather** location
 - **add or remove cameras** (passwords are masked)
 
@@ -147,6 +147,13 @@ You can change this in Settings → **Play channels with**:
 - If a Tunarr channel has the same number as an antenna channel, the antenna channel wins.
 - Typing a number on the remote picks an exact match first. For example, typing `4` opens Tunarr channel 4; type `41` for 4.1.
 
+**IPTV channels:** in ⚙ Settings → **IPTV**, enter your provider's M3U / M3U8 playlist link (easiest from your phone, see above). An Xtream-style `get.php?username=…&password=…&type=m3u_plus` link works too.
+- Channels are listed after the antenna and Tunarr channels. They keep the playlist's `tvg-chno` number when it's free; otherwise they're numbered from 1000 up, in playlist order.
+- Guide: add an XMLTV link (plain or `.gz`) under **Guide (XMLTV)**, or leave it blank to use the guide the playlist names (`url-tvg`). Channels are matched by `tvg-id`, then by name. The guide is re-downloaded every 3 hours.
+- **Channel groups** lets you hide playlist groups (`group-title`) you don't want. At most 3,000 channels are loaded, so hide groups to trim a big provider list.
+- MPEG-TS streams get full pause and rewind. HLS (`.m3u8`), DASH, RTMP and RTSP streams play directly, and pause / rewind work within the stream's own live window. Formats the built-in player can't decode switch to VLC as usual.
+- Playlist and guide links often contain your username and password. The TV shows only the host name, and the log masks them.
+
 **Plex Live TV:** the Plex tile opens the Plex app. Plex doesn't allow other apps to open its Live TV screen or tune a channel directly, so you choose Live TV inside Plex. If your Plex DVR uses this same HDHomeRun, those channels are already in this launcher's guide.
 
 ## Build the APK
@@ -208,7 +215,7 @@ Do these steps from the **main (owner) profile**. The restricted profile's PIN a
 
 ## Troubleshooting
 - **Automatic rechecks:** while the home screen is showing, the launcher reloads channels and the guide every 15 minutes.
-  - If the HDHomeRun or Tunarr can't be reached, it tries again after 30 seconds, then 1 minute, then 2, then every 5 minutes until it's back. You don't need to do anything.
+  - If the HDHomeRun, Tunarr or IPTV playlist can't be reached, it tries again after 30 seconds, then 1 minute, then 2, then every 5 minutes until it's back. You don't need to do anything.
   - While a source is down, its last known channels stay in the list.
   - If the saved HDHomeRun address stops answering (for example, your router gave the tuner a new address), the launcher looks for the tuner on your network automatically.
 - **Finding your tuner:** go to ⚙ Settings → HDHomeRun → **Find HDHomeRun on the network**. It searches your network, the same way HDHomeRun's own apps do, and lists every tuner it finds with its name, model, address and tuner count. Pick one to use it, or choose *Automatic*. The phone setup page has the same **Find HDHomeRun** button.
@@ -228,6 +235,7 @@ app/src/main/java/com/dave/livetvlauncher/
   Timeshift          On-disk pause/rewind buffer for live TV
   HdhrClient         Tuner discovery, lineup.json, guide API
   TunarrClient       Tunarr lineup.json + XMLTV guide
+  IptvClient         IPTV M3U playlist + XMLTV guide (streamed, .gz ok)
   Weather            Current conditions for the clock (Open-Meteo)
   WeatherActivity    10-day forecast + radar loop (RainViewer, Esri map)
   PhoneSetupServer   "Set up from your phone" web page + QR code

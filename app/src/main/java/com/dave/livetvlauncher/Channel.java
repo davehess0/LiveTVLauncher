@@ -12,6 +12,10 @@ public final class Channel {
     public boolean hd;
     public boolean favorite;
     public boolean tunarr;         // from the Tunarr server rather than the antenna tuner
+    public boolean iptv;           // from an IPTV (M3U) playlist
+    public String group = "";      // IPTV group-title
+    public String guideId = "";    // IPTV tvg-id, to match the XMLTV guide
+    public String guideName = "";  // IPTV tvg-name (or the channel name)
     public final List<Airing> airings = new ArrayList<>();
 
     public static final class Airing {
@@ -49,13 +53,13 @@ public final class Channel {
         return number.replaceAll("[^0-9]", "");
     }
 
-    /** Sort key so 2.1 < 4.1 < 10.1 < 41.3 (string sort would get this wrong); Tunarr channels follow the antenna ones. */
+    /** Sort key so 2.1 < 4.1 < 10.1 < 41.3 (string sort would get this wrong); Tunarr, then IPTV, follow the antenna ones. */
     public double sortKey() {
         try {
             String[] p = number.split("[.\\-]");
             double major = Double.parseDouble(p[0]);
             double minor = p.length > 1 ? Double.parseDouble(p[1]) : 0;
-            return (tunarr ? 1e9 : 0) + major * 1000 + minor;
+            return (iptv ? 2e9 : tunarr ? 1e9 : 0) + major * 1000 + minor;
         } catch (Exception e) {
             return Double.MAX_VALUE;
         }

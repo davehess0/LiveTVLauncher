@@ -98,6 +98,25 @@ public final class Prefs {
                 .putBoolean("weatherF", fahrenheit).apply();
     }
 
+    /** IPTV playlist (M3U / M3U8 or an Xtream get.php link); blank = not used. */
+    public String iptvUrl() { return sp.getString("iptvUrl", ""); }
+    public void setIptvUrl(String v) { sp.edit().putString("iptvUrl", v == null ? "" : v.trim()).apply(); }
+    /** IPTV guide (XMLTV, may be .gz); blank = use the playlist's own url-tvg if it has one. */
+    public String iptvGuideUrl() { return sp.getString("iptvGuideUrl", ""); }
+    public void setIptvGuideUrl(String v) { sp.edit().putString("iptvGuideUrl", v == null ? "" : v.trim()).apply(); }
+    /** IPTV groups (group-title) the user hid. */
+    public java.util.Set<String> iptvHiddenGroups() {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(sp.getString("iptvHiddenGroups", "[]"));
+            for (int i = 0; i < a.length(); i++) out.add(a.getString(i));
+        } catch (Exception ignored) { }
+        return out;
+    }
+    public void setIptvHiddenGroups(java.util.Set<String> v) {
+        sp.edit().putString("iptvHiddenGroups", new org.json.JSONArray(v).toString()).apply();
+    }
+
     /** Tunarr server, e.g. http://192.168.1.50:8000; blank = not used. */
     public String tunarrUrl() { return sp.getString("tunarrUrl", ""); }
     public void setTunarrUrl(String v) { sp.edit().putString("tunarrUrl", v == null ? "" : v.trim()).apply(); }

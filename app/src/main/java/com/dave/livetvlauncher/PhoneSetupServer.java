@@ -170,7 +170,13 @@ final class PhoneSetupServer {
                 if (!tunarr.isEmpty() && !tunarr.matches("(?i)^https?://.*")) tunarr = "http://" + tunarr;
                 if (!plex.isEmpty() && !plex.matches("(?i)^https?://.*")) plex = "http://" + plex;
                 if (!plex.isEmpty() && !plex.matches(".*:\\d+/?$")) plex = plex.replaceAll("/+$", "") + ":32400";
-                boolean sourcesChanged = !tuner.equals(prefs.tunerIp()) || !tunarr.equals(prefs.tunarrUrl()) || !plex.equals(prefs.plexUrl());
+                String iptv = clean(f.get("iptv")), iptvGuide = clean(f.get("iptvguide"));
+                boolean sourcesChanged = !tuner.equals(prefs.tunerIp()) || !tunarr.equals(prefs.tunarrUrl()) || !plex.equals(prefs.plexUrl())
+                        || !iptv.equals(prefs.iptvUrl()) || !iptvGuide.equals(prefs.iptvGuideUrl());
+                if (!iptv.equals(prefs.iptvUrl())) prefs.setIptvHiddenGroups(new java.util.HashSet<>());
+                prefs.setIptvUrl(iptv);
+                prefs.setIptvGuideUrl(iptvGuide);
+                if (sourcesChanged) IptvClient.forgetGuide();
                 prefs.setTunerIp(tuner);
                 prefs.setTunarrUrl(tunarr);
                 prefs.setPlexUrl(plex);
@@ -189,6 +195,7 @@ final class PhoneSetupServer {
                 }
                 AppLog.i("PhoneSetup", "Saved from phone: HDHomeRun=" + (tuner.isEmpty() ? "automatic" : tuner)
                         + " · Tunarr=" + (tunarr.isEmpty() ? "off" : tunarr) + " · Plex server=" + (plex.isEmpty() ? "automatic" : plex)
+                        + " · IPTV=" + (iptv.isEmpty() ? "off" : iptv)
                         + " · weather=" + (prefs.weatherPlace().isEmpty() ? "off" : prefs.weatherPlace()));
                 changed(sourcesChanged);
                 return "Saved." + weatherMsg + (sourcesChanged ? " Channels are reloading on the TV." : "");
@@ -273,6 +280,8 @@ final class PhoneSetupServer {
         b.append("<form method=post action='/save'><input type=hidden name=k value='").append(k).append("'>")
          .append(field("HDHomeRun address", "tuner", prefs.tunerIp(), "e.g. 192.168.1.50 — blank = find it automatically"))
          .append(field("Tunarr server", "tunarr", prefs.tunarrUrl(), "e.g. http://192.168.1.50:8000 — blank = off"))
+         .append(field("IPTV playlist (M3U)", "iptv", prefs.iptvUrl(), "e.g. http://provider.example/get.php?username=…&type=m3u_plus — blank = off"))
+         .append(field("IPTV guide (XMLTV)", "iptvguide", prefs.iptvGuideUrl(), "blank = use the playlist's own guide, if any"))
          .append(field("Plex server address", "plex", prefs.plexUrl(), "e.g. http://192.168.1.50:32400 — blank = automatic after linking"))
          .append(field("Weather (ZIP code or city)", "weather", prefs.weatherPlace(), "blank = off"))
          .append("<button>Save</button></form>");

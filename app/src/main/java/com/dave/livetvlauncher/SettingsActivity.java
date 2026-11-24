@@ -93,6 +93,20 @@ public final class SettingsActivity extends Activity {
         });
         group("Tunarr", prefs.tunarrUrl().isEmpty() ? "Off" : prefs.tunarrUrl(), () ->
                 row("Tunarr server", prefs.tunarrUrl().isEmpty() ? "Off · click to add" : prefs.tunarrUrl(), v -> askTunarrUrl()));
+        int iptvCount = 0;
+        for (Channel c : ChannelStore.get().all()) if (c.iptv) iptvCount++;
+        final int iptvN = iptvCount;
+        group("IPTV", prefs.iptvUrl().isEmpty() ? "Off" : iptvN + " channels · " + shortUrl(prefs.iptvUrl()), () -> {
+            row("Playlist (M3U)", prefs.iptvUrl().isEmpty() ? "Off · click to add" : shortUrl(prefs.iptvUrl()), v -> askIptv(false));
+            row("Guide (XMLTV)", !prefs.iptvGuideUrl().isEmpty() ? shortUrl(prefs.iptvGuideUrl())
+                    : "From the playlist, if it names one", v -> askIptv(true));
+            if (!prefs.iptvUrl().isEmpty()) {
+                int groups = ChannelStore.get().iptvGroups().size(), hidden = prefs.iptvHiddenGroups().size();
+                row("Channel groups", groups == 0 ? "None in the playlist"
+                        : (hidden == 0 ? "All " + groups + " shown" : (groups - Math.min(hidden, groups)) + " of " + groups + " shown"),
+                        v -> pickIptvGroups());
+            }
+        });
         group("Plex", prefs.plexToken().isEmpty() ? "Not connected" : "Connected", () -> {
             row("Plex account", prefs.plexToken().isEmpty() ? "Not connected · click to link"
                     : "Connected · click to re-link", v -> linkPlex());
@@ -137,7 +151,7 @@ public final class SettingsActivity extends Activity {
         about.setSingleLine(false);
         about.setPadding(0, Ui.dp(this, 24), 0, 0);
         about.setText("Live TV Home 1.0 — no ads, no tracking, no accounts.\n"
-                + "Only talks to your HDHomeRun, api.hdhomerun.com (guide data), your Tunarr server if you add one, "
+                + "Only talks to your HDHomeRun, api.hdhomerun.com (guide data), your Tunarr server and IPTV playlist / guide if you add them, "
                 + "Open-Meteo if you turn on weather (RainViewer and Esri maps for the radar, weather.gov for alerts), and — if you link it — your Plex server and plex.tv (sign-in).");
         list.addView(about);
         View target = keep != null ? list.findViewWithTag(keep) : null;
@@ -423,6 +437,76 @@ public final class SettingsActivity extends Activity {
                 .setView(in)
                 .setPositiveButton("Save", (d, w) -> {
                     prefs.setTunarrUrl(in.getText().toString());
+                    ChannelStore.get().refresh(this);
+                    render();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Just the host, so playlist links with a username / password in them aren't shown on the TV. */
+    private static String shortUrl(String u) {
+        try {
+            android.net.Uri p = android.net.Uri.parse(u.matches("(?i)^[a-z]+://.*") ? u : "http://" + u);
+            return p.getHost() + (p.getPort() > 0 ? ":" + p.getPort() : "") + (p.getPath() != null && p.getPath().length() > 1 ? "/…" : "");
+        } catch (Exception e) {
+            return "set";
+        }
+    }
+
+    private void askIptv(boolean guide) {
+        EditText in = new EditText(this);
+        in.setHint(guide ? "e.g. http://example.com/epg.xml.gz (blank = from the playlist)"
+                : "e.g. http://example.com/playlist.m3u (blank = off)");
+        in.setText(guide ? prefs.iptvGuideUrl() : prefs.iptvUrl());
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        new AlertDialog.Builder(this)
+                .setTitle(guide ? "IPTV guide (XMLTV)" : "IPTV playlist (M3U)")
+                .setMessage(guide ? "An XMLTV guide file (plain or .gz). Channels are matched by tvg-id, then by name."
+                        : "An M3U / M3U8 playlist link from your IPTV provider (an Xtream get.php?…type=m3u_plus link works too). "
+                        + "Its channels are added after your antenna and Tunarr channels. Tip: setting this from your phone is easier.")
+                .setView(in)
+                .setPositiveButton("Save", (d, w) -> {
+                    String v = in.getText().toString().trim();
+                    if (guide) prefs.setIptvGuideUrl(v);
+                    else {
+                        if (!v.equals(prefs.iptvUrl())) prefs.setIptvHiddenGroups(new java.util.HashSet<>());
+                        prefs.setIptvUrl(v);
+                    }
+                    IptvClient.forgetGuide();
+                    ChannelStore.get().refresh(this);
+                    render();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Choose which playlist groups (group-title) appear in the channel list. */
+    private void pickIptvGroups() {
+        java.util.List<String> groups = ChannelStore.get().iptvGroups();
+        if (groups.isEmpty()) {
+            Toast.makeText(this, "This playlist has no groups (or hasn't loaded yet).", Toast.LENGTH_LONG).show();
+            return;
+        }
+        java.util.Set<String> hidden = prefs.iptvHiddenGroups();
+        String[] names = groups.toArray(new String[0]);
+        boolean[] shown = new boolean[names.length];
+        for (int i = 0; i < names.length; i++) shown[i] = !hidden.contains(names[i]);
+        new AlertDialog.Builder(this)
+                .setTitle("IPTV groups to show")
+                .setMultiChoiceItems(names, shown, (d, i, on) -> shown[i] = on)
+                .setPositiveButton("Save", (d, w) -> {
+                    java.util.Set<String> h = new java.util.HashSet<>();
+                    for (int i = 0; i < names.length; i++) if (!shown[i]) h.add(names[i]);
+                    prefs.setIptvHiddenGroups(h);
+                    IptvClient.forgetGuide();
+                    ChannelStore.get().refresh(this);
+                    Toast.makeText(this, "Reloading channels…", Toast.LENGTH_SHORT).show();
+                    render();
+                })
+                .setNeutralButton("Show all", (d, w) -> {
+                    prefs.setIptvHiddenGroups(new java.util.HashSet<>());
+                    IptvClient.forgetGuide();
                     ChannelStore.get().refresh(this);
                     render();
                 })

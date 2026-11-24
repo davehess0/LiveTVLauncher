@@ -101,7 +101,8 @@ public final class Apps {
             case Prefs.PLAYER_EXTERNAL:
                 try {
                     Intent v = new Intent(Intent.ACTION_VIEW);
-                    v.setDataAndType(Uri.parse(ch.streamUrl), "video/mp2t");
+                    v.setDataAndType(Uri.parse(ch.streamUrl), IptvClient.isDirect(ch.streamUrl) && ch.streamUrl.contains(".m3u8")
+                            ? "application/x-mpegURL" : "video/mp2t");
                     v.putExtra("title", ch.number + " " + ch.name);
                     a.startActivity(v);
                     return;
