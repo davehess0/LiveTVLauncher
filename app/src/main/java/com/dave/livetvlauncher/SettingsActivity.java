@@ -507,7 +507,7 @@ public final class SettingsActivity extends Activity {
         String[] names = groups.toArray(new String[0]);
         boolean[] shown = new boolean[names.length];
         for (int i = 0; i < names.length; i++) shown[i] = !hidden.contains(names[i]);
-        new AlertDialog.Builder(this)
+        AlertDialog dlg = new AlertDialog.Builder(this)
                 .setTitle("IPTV groups to show")
                 .setMultiChoiceItems(names, shown, (d, i, on) -> shown[i] = on)
                 .setPositiveButton("Save", (d, w) -> {
@@ -519,14 +519,30 @@ public final class SettingsActivity extends Activity {
                     Toast.makeText(this, "Reloading channels…", Toast.LENGTH_SHORT).show();
                     render();
                 })
-                .setNeutralButton("Show all", (d, w) -> {
-                    prefs.setIptvHiddenGroups(new java.util.HashSet<>());
-                    IptvClient.forgetGuide();
-                    ChannelStore.get().refresh(this);
-                    render();
-                })
+                .setNeutralButton(allTrue(shown) ? "Hide all" : "Show all", null)
                 .setNegativeButton("Cancel", null)
                 .show();
+        // Hide all / Show all ticks or clears every box without closing; Save applies it.
+        android.widget.Button toggle = dlg.getButton(AlertDialog.BUTTON_NEUTRAL);
+        toggle.setOnClickListener(v -> {
+            boolean on = !allTrue(shown);
+            android.widget.ListView lv = dlg.getListView();
+            for (int i = 0; i < names.length; i++) {
+                shown[i] = on;
+                lv.setItemChecked(i, on);
+            }
+            toggle.setText(on ? "Hide all" : "Show all");
+        });
+        // Keep the label right as single boxes are ticked.
+        dlg.getListView().setOnItemClickListener((parent, view, pos, id) -> {
+            shown[pos] = dlg.getListView().isItemChecked(pos);
+            toggle.setText(allTrue(shown) ? "Hide all" : "Show all");
+        });
+    }
+
+    private static boolean allTrue(boolean[] b) {
+        for (boolean x : b) if (!x) return false;
+        return true;
     }
 
     private final android.os.Handler ui =new android.os.Handler(android.os.Looper.getMainLooper());
