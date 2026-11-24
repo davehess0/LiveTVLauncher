@@ -164,9 +164,11 @@ final class PhoneSetupServer {
     private String receiveUpdate(InputStream in, long length) {
         String blocked = Updater.blockedReason(app);
         if (blocked != null) return blocked;
-        if (!Updater.installAllowed(app))
-            return "First allow Live TV Home to install apps on the TV: Settings → System → Check for updates walks you through it "
-                    + "(on the Shield: Device Preferences → Security & restrictions → Unknown sources). Then send the file again.";
+        if (!Updater.installAllowed(app)) {
+            main.post(() -> Updater.openInstallPermission(app));
+            return "Android needs your OK first, once. The TV now shows \"Install unknown apps\": turn on Live TV Home there. "
+                    + "Then on the TV open Settings → Set up from your phone again, scan the new code and send the file.";
+        }
         if (length <= 0) return "Choose an APK file first.";
         if (length > MAX_APK) return "That file is too big to be a Live TV Home APK.";
         if (app.getCacheDir().getUsableSpace() < length + 50L * 1024 * 1024) return "Not enough free space on the TV for the update.";
