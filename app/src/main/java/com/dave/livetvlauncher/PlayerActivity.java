@@ -493,14 +493,16 @@ public final class PlayerActivity extends Activity {
     private void buildChannelGuide(FrameLayout root) {
         guide = new LinearLayout(this);
         guide.setOrientation(LinearLayout.VERTICAL);
+        // No side padding on the panel itself: the list carries it instead (below), so the selected
+        // channel's glow has room inside the list and isn't cut flat at its left and right edges.
         int p = Ui.dp(this, 24);
-        guide.setPadding(p, p, p, p);
+        guide.setPadding(0, p, 0, p);
         guide.setBackground(new android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{0xF20A0A0C, 0xE60A0A0C, 0x000A0A0C}));
         TextView title = Ui.text(this, 22, Ui.TEXT, true);
         title.setText("Channels");
-        title.setPadding(Ui.dp(this, 8), 0, 0, Ui.dp(this, 12));
+        title.setPadding(p + Ui.dp(this, 8), 0, 0, Ui.dp(this, 12));
         guide.addView(title);
         guideList = new android.widget.ListView(this);
         guideList.setDivider(null);
@@ -508,6 +510,8 @@ public final class PlayerActivity extends Activity {
         guideList.setSelector(Ui.focusedGlass(this, Ui.dp(this, 14)));
         guideList.setDrawSelectorOnTop(false);
         guideList.setVerticalScrollBarEnabled(false);
+        guideList.setPadding(p, Ui.dp(this, 12), p, Ui.dp(this, 12));
+        guideList.setClipToPadding(false);
         guideList.setAdapter(new ChannelGuideAdapter());
         guideList.setOnItemClickListener((parent, v, pos, id) -> {
             hideChannelGuide();
