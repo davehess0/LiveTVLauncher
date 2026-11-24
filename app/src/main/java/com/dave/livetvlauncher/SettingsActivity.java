@@ -152,7 +152,9 @@ public final class SettingsActivity extends Activity {
         TextView about = Ui.text(this, 14, Ui.SUB, false);
         about.setSingleLine(false);
         about.setPadding(0, Ui.dp(this, 24), 0, 0);
-        about.setText("Live TV Home 1.0 — no ads, no tracking, no accounts.");
+        String ver = "";
+        try { ver = " " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
+        about.setText("Live TV Home" + ver + " — no ads, no tracking, no accounts.");
         list.addView(about);
         View target = keep != null ? list.findViewWithTag(keep) : null;
         if (target == null) target = list.getChildAt(1); // first row
