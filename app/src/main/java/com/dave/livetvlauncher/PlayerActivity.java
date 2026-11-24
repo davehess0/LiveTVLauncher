@@ -512,6 +512,10 @@ public final class PlayerActivity extends Activity {
         guideList.setVerticalScrollBarEnabled(false);
         guideList.setPadding(p, Ui.dp(this, 12), p, Ui.dp(this, 12));
         guideList.setClipToPadding(false);
+        // A ListView keeps the selected row this far from its top and bottom while scrolling, and fades
+        // rows out there, so the selected channel never sits on the bottom edge of the screen.
+        guideList.setVerticalFadingEdgeEnabled(true);
+        guideList.setFadingEdgeLength(Ui.dp(this, Ui.SCROLL_CLEAR_DP));
         guideList.setAdapter(new ChannelGuideAdapter());
         guideList.setOnItemClickListener((parent, v, pos, id) -> {
             hideChannelGuide();
