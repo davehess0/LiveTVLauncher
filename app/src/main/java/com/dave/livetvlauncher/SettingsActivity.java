@@ -139,7 +139,11 @@ public final class SettingsActivity extends Activity {
                 render();
             });
         });
-        group("System", "PIN " + (prefs.pin().isEmpty() ? "off" : "on") + " · refresh · log", () -> {
+        group("System", "PIN " + (prefs.pin().isEmpty() ? "off" : "on") + " · updates · log", () -> {
+            row("Check for updates", "Version " + Updater.currentVersion(this) + " · looks on GitHub", v -> checkForUpdates());
+            String tokenSrc = Updater.tokenSource(this);
+            row("GitHub token", tokenSrc.isEmpty() ? "None · set it from your phone (for a private repo)" : "Set (" + tokenSrc + ")",
+                    v -> tokenOptions());
             row("Settings PIN", prefs.pin().isEmpty() ? "Off" : "On", v -> askPin());
             row("Refresh channels & guide", ChannelStore.get().status(), v -> {
                 ChannelStore.get().refresh(this);
@@ -292,7 +296,8 @@ public final class SettingsActivity extends Activity {
         TextView t = Ui.text(this, 16, Ui.TEXT, false);
         t.setSingleLine(false);
         t.setPadding(Ui.dp(this, 28), 0, 0, 0);
-        t.setText("Scan with your phone's camera to set the HDHomeRun, Tunarr and Plex addresses, cameras and weather.\n\n"
+        t.setText("Scan with your phone's camera to set the HDHomeRun, Tunarr and Plex addresses, cameras and weather, "
+                + "or to send an app update (APK) to the TV.\n\n"
                 + "Your phone must be on the same Wi-Fi.\n\nOr type this into its browser:\n" + url
                 + "\n\nThe page stops working when you close this.");
         box.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
@@ -654,6 +659,137 @@ public final class SettingsActivity extends Activity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    // ---- Updates ----
+
+    /** Ask GitHub for the newest release; offer to install it if it's newer than this one. */
+    private void checkForUpdates() {
+        String blocked = Updater.blockedReason(this);
+        if (blocked != null) {
+            new AlertDialog.Builder(this).setTitle("Updates").setMessage(blocked).setPositiveButton("OK", null).show();
+            return;
+        }
+        AlertDialog checking = new AlertDialog.Builder(this)
+                .setTitle("Checking for updates…")
+                .setMessage("Asking GitHub for the newest version.")
+                .setNegativeButton("Cancel", null)
+                .show();
+        net.execute(() -> {
+            Updater.Release r = null;
+            String error = null;
+            try {
+                r = Updater.latest(this);
+            } catch (Updater.NotFound e) {
+                error = e.withToken
+                        ? "GitHub shows no releases at github.com/" + Updater.REPO + " for this token. Check the repo has a "
+                        + "release, and that the token has read access to its Contents."
+                        : "No releases are visible at github.com/" + Updater.REPO + ". If the repository is private, add a "
+                        + "GitHub token from your phone (Set up from your phone → Install an update), or send the APK from there.";
+            } catch (Exception e) {
+                error = "Couldn't reach GitHub (" + e.getMessage() + "). Check the internet connection and try again.";
+            }
+            final Updater.Release rel = r;
+            final String err = error;
+            ui.post(() -> {
+                if (!checking.isShowing()) return; // cancelled
+                checking.dismiss();
+                String mine = Updater.currentVersion(this);
+                if (err != null) {
+                    AppLog.w("Update", "Check failed: " + err);
+                    new AlertDialog.Builder(this).setTitle("Couldn't check for updates").setMessage(err)
+                            .setPositiveButton("OK", null).show();
+                } else if (!Updater.newer(rel.version, mine)) {
+                    new AlertDialog.Builder(this).setTitle("You're up to date")
+                            .setMessage("Live TV Home " + mine + " is the newest version.").setPositiveButton("OK", null).show();
+                } else if (rel.apkUrl.isEmpty()) {
+                    new AlertDialog.Builder(this).setTitle("Version " + rel.version + " is out")
+                            .setMessage("But its GitHub release has no APK attached yet. Try again later.")
+                            .setPositiveButton("OK", null).show();
+                } else {
+                    String notes = rel.notes.length() > 1500 ? rel.notes.substring(0, 1500) + "…" : rel.notes;
+                    new AlertDialog.Builder(this)
+                            .setTitle("Version " + rel.version + " is available")
+                            .setMessage("You have " + mine + "." + (notes.isEmpty() ? "" : "\n\n" + notes)
+                                    + "\n\nDownload: " + (rel.apkSize > 0 ? (rel.apkSize / (1024 * 1024)) + " MB" : rel.apkName))
+                            .setPositiveButton("Install", (d, w) -> installRelease(rel))
+                            .setNegativeButton("Later", null)
+                            .show();
+                }
+            });
+        });
+    }
+
+    /** The token itself is long, so it's typed on the phone page; here it can only be removed. */
+    private void tokenOptions() {
+        boolean onDevice = !prefs.githubToken().isEmpty();
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle("GitHub token")
+                .setMessage("Lets Check for updates read the Releases of a private repository. Use a fine-grained token "
+                        + "with read-only Contents access to " + Updater.REPO + " only.\n\n"
+                        + "To add or change it, open Set up from your phone and use the GitHub token field."
+                        + (BuildConfig.GITHUB_TOKEN.isEmpty() ? "" : "\n\nThis copy of the app also has a token built in, "
+                        + "used when none is set here."))
+                .setPositiveButton("OK", null);
+        if (onDevice) b.setNeutralButton("Remove", (d, w) -> {
+            prefs.setGithubToken("");
+            AppLog.i("Update", "GitHub token removed");
+            render();
+        });
+        b.show();
+    }
+
+    /** Android must allow this app to install apps once; explain and open that screen if it doesn't yet. */
+    private boolean ensureInstallAllowed() {
+        if (Updater.installAllowed(this)) return true;
+        new AlertDialog.Builder(this)
+                .setTitle("Allow updates")
+                .setMessage("Android needs your OK, once, for Live TV Home to install its own updates.\n\n"
+                        + "On the next screen turn on Live TV Home (on the Shield: Device Preferences → Security & restrictions → "
+                        + "Unknown sources). Then come back and choose Check for updates again.")
+                .setPositiveButton("Open settings", (d, w) -> Updater.openInstallPermission(this))
+                .setNegativeButton("Cancel", null)
+                .show();
+        return false;
+    }
+
+    private void installRelease(Updater.Release rel) {
+        if (!ensureInstallAllowed()) return;
+        java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        TextView msg = Ui.text(this, 18, Ui.TEXT, false);
+        msg.setSingleLine(false);
+        msg.setPadding(Ui.dp(this, 24), Ui.dp(this, 16), Ui.dp(this, 24), Ui.dp(this, 8));
+        msg.setText("Starting…");
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle("Downloading version " + rel.version)
+                .setView(msg)
+                .setNegativeButton("Cancel", (d, w) -> cancelled.set(true))
+                .setOnCancelListener(d -> cancelled.set(true))
+                .show();
+        AppLog.i("Update", "Downloading " + rel.version + " (" + rel.apkName + ")");
+        net.execute(() -> {
+            try {
+                java.io.File apk = Updater.download(this, rel, (done, total) -> ui.post(() -> msg.setText(total > 0
+                        ? (done * 100 / total) + "%  ·  " + (done >> 20) + " of " + (total >> 20) + " MB"
+                        : (done >> 20) + " MB")), cancelled);
+                if (apk == null) return; // cancelled
+                String problem = Updater.check(this, apk);
+                if (problem != null) {
+                    apk.delete();
+                    throw new Exception(problem);
+                }
+                ui.post(() -> msg.setText("Installing… Confirm on the next screen. The launcher restarts on the new version."));
+                Updater.install(this, apk);
+                ui.postDelayed(() -> { if (dlg.isShowing()) dlg.dismiss(); }, 4000);
+            } catch (Exception e) {
+                AppLog.w("Update", "Install failed: " + e.getMessage());
+                ui.post(() -> {
+                    if (dlg.isShowing()) dlg.dismiss();
+                    new AlertDialog.Builder(this).setTitle("Update didn't install").setMessage(e.getMessage())
+                            .setPositiveButton("OK", null).show();
+                });
+            }
+        });
     }
 
     private void askPin() {

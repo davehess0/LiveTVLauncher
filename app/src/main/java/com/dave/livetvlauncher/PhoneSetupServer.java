@@ -4,9 +4,9 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
-import java.io.BufferedReader;
+import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -107,23 +107,30 @@ final class PhoneSetupServer {
     private void handle(Socket s) {
         try (Socket sock = s) {
             sock.setSoTimeout(10_000);
-            BufferedReader in = new BufferedReader(new InputStreamReader(sock.getInputStream(), StandardCharsets.UTF_8));
-            String request = in.readLine();
+            InputStream in = new BufferedInputStream(sock.getInputStream(), 65536);
+            String request = readLine(in);
             if (request == null) return;
             String[] parts = request.split(" ");
             String method = parts[0], target = parts.length > 1 ? parts[1] : "/";
-            int length = 0;
-            for (String h; (h = in.readLine()) != null && !h.isEmpty(); ) {
-                if (h.toLowerCase(java.util.Locale.US).startsWith("content-length:")) length = Integer.parseInt(h.substring(15).trim());
+            long length = 0;
+            for (String h; (h = readLine(in)) != null && !h.isEmpty(); ) {
+                if (h.toLowerCase(java.util.Locale.US).startsWith("content-length:")) length = Long.parseLong(h.substring(15).trim());
             }
-            char[] body = new char[Math.min(length, 64 * 1024)];
-            int got = 0;
-            while (got < body.length) { int r = in.read(body, got, body.length - got); if (r < 0) break; got += r; }
-
             String path = target.contains("?") ? target.substring(0, target.indexOf('?')) : target;
             Map<String, String> q = parseForm(target.contains("?") ? target.substring(target.indexOf('?') + 1) : "");
-            Map<String, String> form = parseForm(new String(body, 0, got));
             OutputStream out = sock.getOutputStream();
+
+            // App update: the page sends the APK file as the raw request body (key in the address).
+            if (path.equals("/upload") && method.equals("POST")) {
+                if (!key.equals(q.get("k"))) { send(out, 403, "text/plain", "This link has expired. Scan the new QR code on the TV."); return; }
+                send(out, 200, "text/plain", receiveUpdate(in, length));
+                return;
+            }
+
+            byte[] body = new byte[(int) Math.min(Math.max(length, 0), 64 * 1024)];
+            int got = 0;
+            while (got < body.length) { int r = in.read(body, got, body.length - got); if (r < 0) break; got += r; }
+            Map<String, String> form = parseForm(new String(body, 0, got, StandardCharsets.UTF_8));
 
             if (path.equals("/favicon.ico")) { send(out, 404, "text/plain", "none"); return; }
             if (!key.equals(q.get("k")) && !key.equals(form.get("k"))) {
@@ -136,6 +143,54 @@ final class PhoneSetupServer {
             send(out, 200, "text/html", settingsPage(notice));
         } catch (Exception e) {
             AppLog.w("PhoneSetup", "Request failed (" + e.getClass().getSimpleName() + ")");
+        }
+    }
+
+    /** One header line (bytes up to "\n", without "\r\n"), or null at the end of the stream. */
+    private static String readLine(InputStream in) throws IOException {
+        java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+        int c;
+        while ((c = in.read()) >= 0 && c != '\n') {
+            if (c != '\r') b.write(c);
+            if (b.size() > 16 * 1024) throw new IOException("Header line too long");
+        }
+        if (c < 0 && b.size() == 0) return null;
+        return b.toString("UTF-8");
+    }
+
+    private static final long MAX_APK = 300L * 1024 * 1024;
+
+    /** Saves an uploaded APK, checks it and hands it to the installer. Returns a message for the phone. */
+    private String receiveUpdate(InputStream in, long length) {
+        String blocked = Updater.blockedReason(app);
+        if (blocked != null) return blocked;
+        if (!Updater.installAllowed(app))
+            return "First allow Live TV Home to install apps on the TV: Settings → System → Check for updates walks you through it "
+                    + "(on the Shield: Device Preferences → Security & restrictions → Unknown sources). Then send the file again.";
+        if (length <= 0) return "Choose an APK file first.";
+        if (length > MAX_APK) return "That file is too big to be a Live TV Home APK.";
+        if (app.getCacheDir().getUsableSpace() < length + 50L * 1024 * 1024) return "Not enough free space on the TV for the update.";
+        java.io.File apk = Updater.apkFile(app);
+        try {
+            try (OutputStream o = new java.io.FileOutputStream(apk)) {
+                byte[] buf = new byte[65536];
+                long left = length;
+                while (left > 0) {
+                    int n = in.read(buf, 0, (int) Math.min(buf.length, left));
+                    if (n < 0) throw new IOException("upload cut off");
+                    o.write(buf, 0, n);
+                    left -= n;
+                }
+            }
+            String problem = Updater.check(app, apk);
+            if (problem != null) { apk.delete(); return problem; }
+            AppLog.i("Update", "APK received from phone (" + (length >> 20) + " MB)");
+            Updater.install(app, apk);
+            return "Sent to the TV. Confirm the install on the TV screen; the launcher restarts on the new version.";
+        } catch (Exception e) {
+            apk.delete();
+            AppLog.w("Update", "Upload from phone failed: " + e.getMessage());
+            return "The upload didn't finish (" + e.getMessage() + "). Try again.";
         }
     }
 
@@ -236,6 +291,16 @@ final class PhoneSetupServer {
                 }
                 return "Search again, then tap Use.";
             }
+            case "/githubtoken": {
+                String t = clean(f.get("token"));
+                if (f.containsKey("remove")) t = "";
+                else if (t.isEmpty()) return "Paste the token first.";
+                else if (!t.matches("[A-Za-z0-9_]{20,255}")) return "That doesn't look like a GitHub token.";
+                prefs.setGithubToken(t);
+                AppLog.i("Update", t.isEmpty() ? "GitHub token removed from phone" : "GitHub token set from phone");
+                changed(false);
+                return t.isEmpty() ? "GitHub token removed." : "GitHub token saved. On the TV: Settings → System → Check for updates.";
+            }
             case "/camera/add": {
                 String name = clean(f.get("name")), url = clean(f.get("url"));
                 if (url.isEmpty()) return "Enter the camera's stream address.";
@@ -332,6 +397,30 @@ final class PhoneSetupServer {
          .append(field("Stream address (RTSP)", "url", "", "rtsp://user:password@192.168.1.60/live0"))
          .append("<p class=dim>In the Eufy app: camera → Settings → Storage (or NAS) → RTSP stream.</p>")
          .append("<button>Add camera</button></form>");
+
+        // App update: the file goes up as the raw request body, with a progress readout.
+        b.append("<h2>Install an update</h2>")
+         .append("<p class=dim>You have version ").append(esc(Updater.currentVersion(app)))
+         .append(". Download the new APK (from the GitHub release) to this phone, pick it here, and confirm on the TV.</p>")
+         .append("<form method=post action='/githubtoken'><input type=hidden name=k value='").append(k).append("'>")
+         .append("<label>GitHub token (private repo)<input name=token type=password autocomplete=off placeholder=\"")
+         .append(prefs.githubToken().isEmpty() ? "github_pat_…" : "Saved · paste a new one to replace it").append("\"></label>")
+         .append("<p class=dim>Lets the TV's Check for updates read this repo's Releases. Make a fine-grained token at github.com → "
+                 + "Settings → Developer settings, with access to only ").append(esc(Updater.REPO))
+         .append(" and Contents: Read-only. It's stored only on the TV and never shown again.</p>")
+         .append("<button class=secondary>Save token</button>")
+         .append(prefs.githubToken().isEmpty() ? "" : "<button class=secondary name=remove value=1>Remove token</button>")
+         .append("</form>")
+         .append("<p class=dim>Or send the APK file directly:</p>")
+         .append("<label>APK file<input type=file id=apk accept='.apk,application/vnd.android.package-archive'></label>")
+         .append("<button id=up onclick='sendApk()'>Send to the TV</button><div id=upmsg class=dim style='margin-top:10px'></div>")
+         .append("<script>function sendApk(){var f=document.getElementById('apk').files[0],m=document.getElementById('upmsg'),")
+         .append("b=document.getElementById('up');if(!f){m.textContent='Choose the APK file first.';return;}")
+         .append("var x=new XMLHttpRequest();x.open('POST','/upload?k=").append(k).append("');")
+         .append("x.upload.onprogress=function(e){if(e.lengthComputable)m.textContent='Sending… '+Math.round(e.loaded*100/e.total)+'%';};")
+         .append("x.onload=function(){m.textContent=x.responseText;b.disabled=false;};")
+         .append("x.onerror=function(){m.textContent='Lost the connection to the TV. Is the QR code still showing?';b.disabled=false;};")
+         .append("b.disabled=true;m.textContent='Sending…';x.send(f);}</script>");
         b.append("<p class=dim>This page works only while the QR code is showing on the TV.</p>");
         return page("Live TV Home settings", b.toString());
     }

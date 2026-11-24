@@ -129,7 +129,8 @@ final class AppLog {
     /** Masks tokens and passwords so logs are safe to share. */
     static String mask(String s) {
         if (s == null) return "";
-        return s.replaceAll("(?i)(X-Plex-Token=)[^&\\s\"]+", "$1•••")
+        return s.replaceAll("\\b(github_pat_|gh[pousr]_)[A-Za-z0-9_]+", "$1•••")
+                .replaceAll("(?i)(X-Plex-Token=)[^&\\s\"]+", "$1•••")
                 .replaceAll("(?i)(DeviceAuth=)[^&\\s\"]+", "$1•••")
                 .replaceAll("(?i)(token[\"']?\\s*[:=]\\s*[\"']?)[A-Za-z0-9_\\-]{6,}", "$1•••")
                 .replaceAll("(?i)([?&](?:username|password|user|pass|pwd|token|key)=)[^&\s\"]+", "$1•••")

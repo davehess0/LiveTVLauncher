@@ -3,7 +3,7 @@
 A home screen built around live TV from your **HDHomeRun**, with **Plex Live TV** one press away.
 Your streaming apps (YouTube, Prime Video, Disney+, Plex) and your Plex movies sit right on the home screen too.
 No ads, no tracking. The app only talks to your HDHomeRun tuner, `api.hdhomerun.com` for guide data,
-your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, and, if you link Plex, your Plex server and `plex.tv` for the one-time sign-in.
+your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, your Plex server and `plex.tv` for the one-time sign-in if you link Plex, and GitHub only when you press **Check for updates**.
 
 ## The three layouts (switch any time in ⚙ Settings → Home screen layout)
 
@@ -54,6 +54,24 @@ Add cameras in ⚙ Settings → **Cameras** → **Add camera**: give each one a 
 - **"The camera turned down the user name / password (401)":** the camera itself is rejecting the login, so it's not an app problem.
   - In the Eufy app, turn the camera's RTSP setting off and back on, re-enter the user name and password, save, and restart the camera.
   - To check outside the app, open the same address in VLC on a computer (Media → Open Network Stream).
+
+## Updating the app
+
+Updates install from inside the app, with no computer or `adb` needed. Do this from the **main profile**: a restricted profile can't install apps, and the update applies to every profile anyway.
+
+- **From the TV:** ⚙ Settings → System → **Check for updates**. It asks this repo's GitHub Releases for the newest version, shows its notes, and on **Install** downloads the APK and hands it to Android, which asks you to confirm. The launcher then restarts on the new version with all settings kept.
+- **From your phone:** download the APK to your phone, open ⚙ Settings → **Set up from your phone**, scan the code and use **Install an update** at the bottom of the page. Confirm on the TV. This needs no token.
+- **Private repo:** give the app a GitHub token so it can read the Releases. Make a *fine-grained* token at github.com → Settings → Developer settings → Personal access tokens, with access to **only this repository** and **Contents: Read-only**. Then either:
+  - paste it into **GitHub token** on the phone setup page. It's stored only on the TV and never shown again, and ⚙ Settings → System → GitHub token can remove it. Or:
+  - add `githubToken=github_pat_…` to `local.properties` (never committed). Every APK you build then carries it, and a token set on the TV takes priority. Anyone holding that APK file could pull the token out of it, which is why it should be read-only and limited to this one repo.
+  The token is only sent to `api.github.com`, and the log masks it.
+- **The first time,** Android asks you to let Live TV Home install apps. Settings walks you there (on the Shield: Device Preferences → Security & restrictions → Unknown sources → Live TV Home).
+- **Safety checks:** before installing, the app checks that the APK is Live TV Home, isn't older than what's installed, and is signed with the same key. If any check fails, it explains why and installs nothing.
+
+**Publishing an update:**
+1. Raise `versionCode` and `versionName` in `app/build.gradle`.
+2. Build the APK on the **same computer** as the installed copy. Release builds are signed with that computer's debug key, and Android only accepts an update signed with the same key. APKs built by GitHub Actions use a different key every run, so they can't update an existing install.
+3. Create a GitHub Release tagged `v<versionName>` (for example `v1.2`) and attach the `.apk`.
 
 ## Log
 
@@ -248,5 +266,6 @@ app/src/main/java/com/dave/livetvlauncher/
   PlexStore          Plex cache + how to open an item (deep link or built-in player)
   ChannelStore       Cache + background refresh (every 15 min)
   Apps               Launching apps, app list, playback routing
+  Updater / UpdateReceiver  In-app updates: GitHub Releases check, APK checks, Android installer
   SettingsActivity / AppsActivity / Prefs / Ui / ImageLoader
 ```

@@ -200,6 +200,10 @@ public final class Prefs {
         return pinned;
     }
 
+    /** GitHub token for checking a private repo's Releases (read-only). Empty = none. */
+    public String githubToken() { return sp.getString("githubToken", ""); }
+    public void setGithubToken(String v) { sp.edit().putString("githubToken", v == null ? "" : v.trim()).apply(); }
+
     /** Optional PIN that guards the launcher's own Settings screen. Empty = no PIN. */
     public String pin() { return sp.getString("pin", ""); }
     public void setPin(String v) { sp.edit().putString("pin", v == null ? "" : v).apply(); }

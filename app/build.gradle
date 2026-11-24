@@ -12,6 +12,19 @@ android {
         targetSdk 34
         versionCode 2
         versionName '1.1'
+
+        // Optional GitHub token for "Check for updates" on a private repo: add a line
+        //   githubToken=github_pat_...
+        // to local.properties (never committed). Use a fine-grained token with read-only
+        // "Contents" access to this one repository. Blank = none (a token can also be set from the phone).
+        def lp = new Properties()
+        def lpFile = rootProject.file('local.properties')
+        if (lpFile.exists()) lpFile.withInputStream { lp.load(it) }
+        buildConfigField 'String', 'GITHUB_TOKEN', '"' + (lp.getProperty('githubToken') ?: '').trim() + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     buildTypes {
