@@ -182,6 +182,7 @@ public final class PlayerActivity extends Activity {
                 else retryOrFail("STREAM_ENDED");
             }
         });
+        vlc.setSubtitles(subsOn);
         view.setVisibility(View.INVISIBLE);
         if (player != null) player.stop();
     }
@@ -227,6 +228,8 @@ public final class PlayerActivity extends Activity {
         vlc.play(urls[0], at);
     }
     private Prefs prefs;
+    /** Subtitles / closed captions wanted (Settings, or the menu / CC button while watching). */
+    private boolean subsOn;
     /** Live TV plays from this on-disk buffer so it can be paused and rewound. */
     private Timeshift timeshift;
     /**
@@ -249,6 +252,7 @@ public final class PlayerActivity extends Activity {
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs = new Prefs(this);
+        subsOn = prefs.subtitles();
         Intent in = getIntent();
         nums = in.getStringArrayExtra(X_NUMS);
         names = in.getStringArrayExtra(X_NAMES);
@@ -401,8 +405,12 @@ public final class PlayerActivity extends Activity {
         controls = new FrameLayout(this);
         controls.setVisibility(View.GONE);
 
-        // Top left: back to the home screen.
+        // Top left: back to the home screen, and subtitles on / off.
         controls.addView(touchButton("←", 26, 64, x -> finish()), at(64, Gravity.TOP | Gravity.START, 24, 24));
+        TextView cc = touchButton("CC", 16, 64, x -> toggleSubtitles());
+        FrameLayout.LayoutParams ccp = new FrameLayout.LayoutParams(Ui.dp(this, 64), Ui.dp(this, 64), Gravity.TOP | Gravity.START);
+        ccp.setMargins(Ui.dp(this, 104), Ui.dp(this, 24), 0, 0);
+        controls.addView(cc, ccp);
 
         // Centre: skip back, play / pause, skip forward.
         LinearLayout mid = new LinearLayout(this);
@@ -686,6 +694,12 @@ public final class PlayerActivity extends Activity {
             }
         });
         view.setPlayer(player);
+        // Subtitles in the viewer's own caption style (Android settings > Accessibility > Captions).
+        if (view.getSubtitleView() != null) {
+            view.getSubtitleView().setUserDefaultStyle();
+            view.getSubtitleView().setUserDefaultTextSize();
+        }
+        applySubtitles(false);
         if (plexMode) startPlex(); else tune(index, true);
         handler.postDelayed(alertCheck, 5000);
     }
@@ -695,9 +709,32 @@ public final class PlayerActivity extends Activity {
         long start = Math.max(0, plexStartMs - 5000);
         tuneStartedAt = System.currentTimeMillis();
         AppLog.i("Player", "Plex: " + nums[0] + " from " + start / 1000 + " s");
-        player.setMediaItem(MediaItem.fromUri(Uri.parse(urls[0])), start);
-        player.prepare();
-        player.setPlayWhenReady(true);
+        // Separate subtitle files (e.g. Movie.en.srt) come from the Plex server; tracks inside the file
+        // need nothing extra. A quick lookup on the home network, then play.
+        net.execute(() -> {
+            List<PlexClient.SubFile> subs = java.util.Collections.emptyList();
+            try { subs = plex.subtitleFiles(plexBase, plexToken, plexKey); } catch (Exception e) {
+                AppLog.w("Player", "Plex: couldn't list subtitle files (" + e.getClass().getSimpleName() + ")");
+            }
+            final List<PlexClient.SubFile> files = subs;
+            handler.post(() -> {
+                if (player == null || vlc != null) return; // closed, or already handed to VLC
+                MediaItem.Builder mi = new MediaItem.Builder().setUri(Uri.parse(urls[0]));
+                List<MediaItem.SubtitleConfiguration> cfg = new java.util.ArrayList<>();
+                for (PlexClient.SubFile f : files) {
+                    cfg.add(new MediaItem.SubtitleConfiguration.Builder(Uri.parse(f.url))
+                            .setMimeType(f.mime).setLanguage(f.language.isEmpty() ? null : f.language)
+                            .setLabel(f.label).build());
+                }
+                if (!cfg.isEmpty()) {
+                    mi.setSubtitleConfigurations(cfg);
+                    AppLog.i("Player", "Plex: " + cfg.size() + " subtitle file" + (cfg.size() == 1 ? "" : "s"));
+                }
+                player.setMediaItem(mi.build(), start);
+                player.prepare();
+                player.setPlayWhenReady(true);
+            });
+        });
         bannerChannel.setText("PLEX");
         bannerChannel.setTextColor(Ui.PLEX);
         bannerTitle.setText(nums[0]);
@@ -768,9 +805,43 @@ public final class PlayerActivity extends Activity {
             case KeyEvent.KEYCODE_INFO:
                 showPlexBanner();
                 return true;
+            case KeyEvent.KEYCODE_CAPTIONS:
+            case KeyEvent.KEYCODE_MENU:
+                toggleSubtitles();
+                return true;
             default:
                 return false;
         }
+    }
+
+    /** Menu / CC button (or the CC touch button): subtitles on or off, remembered for next time. */
+    private void toggleSubtitles() {
+        subsOn = !subsOn;
+        prefs.setSubtitles(subsOn);
+        applySubtitles(true);
+    }
+
+    /** Turns subtitle / caption tracks on (preferring this device's language, then English) or off. */
+    private void applySubtitles(boolean announce) {
+        boolean has;
+        if (vlc != null) {
+            vlc.setSubtitles(subsOn);
+            has = vlc.hasSubtitles();
+        } else if (player != null) {
+            androidx.media3.common.TrackSelectionParameters.Builder b = player.getTrackSelectionParameters().buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subsOn);
+            if (subsOn) b.setPreferredTextLanguages(java.util.Locale.getDefault().getLanguage(), "en")
+                    .setSelectUndeterminedTextLanguage(true); // broadcast captions carry no language
+            player.setTrackSelectionParameters(b.build());
+            has = player.getCurrentTracks().containsType(C.TRACK_TYPE_TEXT);
+        } else {
+            return;
+        }
+        if (!announce) return;
+        String what = plexMode ? "this video" : "this channel";
+        android.widget.Toast.makeText(this, !subsOn ? "Subtitles off"
+                : has ? "Subtitles on" : "Subtitles on · " + what + " has none right now", android.widget.Toast.LENGTH_SHORT).show();
+        AppLog.i("Player", "Subtitles " + (subsOn ? "on" : "off") + (subsOn && !has ? " (none available)" : ""));
     }
 
     /** Release the player (and the tuner) whenever we're not on screen. */
@@ -1077,6 +1148,10 @@ public final class PlayerActivity extends Activity {
             case KeyEvent.KEYCODE_INFO:
                 if (banner.getAlpha() > 0.5f) hideBanner.run();
                 else showBanner();
+                return true;
+            case KeyEvent.KEYCODE_CAPTIONS:
+            case KeyEvent.KEYCODE_MENU:
+                toggleSubtitles();
                 return true;
             case KeyEvent.KEYCODE_GUIDE:
                 finish(); // back to the home screen guide

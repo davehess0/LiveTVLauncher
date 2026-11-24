@@ -44,6 +44,7 @@ final class VlcEngine {
                 case MediaPlayer.Event.Buffering: l.onBuffering(e.getBuffering() < 100f); break;
                 case MediaPlayer.Event.EncounteredError: l.onError("VLC could not play this stream"); break;
                 case MediaPlayer.Event.EndReached: l.onEnded(); break;
+                case MediaPlayer.Event.ESAdded: applySubtitles(); break; // captions can appear once playing
                 default: break;
             }
         });
@@ -57,6 +58,32 @@ final class VlcEngine {
         m.release();
         wantPlay = true;
         mp.play();
+    }
+
+    private boolean wantSubs;
+
+    /** Subtitles / captions on (the first track there is) or off. */
+    void setSubtitles(boolean on) {
+        wantSubs = on;
+        applySubtitles();
+    }
+
+    /** True if the current video has any subtitle or caption track. */
+    boolean hasSubtitles() {
+        MediaPlayer.TrackDescription[] t = mp.getSpuTracks();
+        if (t == null) return false;
+        for (MediaPlayer.TrackDescription d : t) if (d.id != -1) return true;
+        return false;
+    }
+
+    private void applySubtitles() {
+        try {
+            if (!wantSubs) { if (mp.getSpuTrack() != -1) mp.setSpuTrack(-1); return; }
+            if (mp.getSpuTrack() != -1) return;
+            MediaPlayer.TrackDescription[] t = mp.getSpuTracks();
+            if (t == null) return;
+            for (MediaPlayer.TrackDescription d : t) if (d.id != -1) { mp.setSpuTrack(d.id); return; }
+        } catch (Exception ignored) { }
     }
 
     /** Silence (for previews). */

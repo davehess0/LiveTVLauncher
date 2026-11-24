@@ -86,6 +86,10 @@ public final class SettingsActivity extends Activity {
                 prefs.setStartOnLastChannel(!prefs.startOnLastChannel());
                 render();
             });
+            row("Subtitles / captions", prefs.subtitles() ? "On (menu or CC button toggles them while watching)" : "Off", v -> {
+                prefs.setSubtitles(!prefs.subtitles());
+                render();
+            });
             row("Live preview in the guide", prefs.livePreview() ? "On (uses a tuner while showing)" : "Off", v -> {
                 prefs.setLivePreview(!prefs.livePreview());
                 render();

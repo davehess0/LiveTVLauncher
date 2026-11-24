@@ -138,6 +138,11 @@ Pick a channel and it plays right away in the built-in player, straight from the
 
 **Live preview in the Guide:** when you rest on a channel in the Guide layout for about a second, its preview panel plays that channel live, without sound. The logo shows until the video starts. Channels the device can't decode use VLC, as in the full player. The preview uses one tuner while it plays and gives it back as soon as you open a channel, move to another row or leave the Guide. To turn it off, for example if your tuners are often all busy, go to ⚙ Settings → **Live preview in the guide**.
 
+**Subtitles and closed captions:** turn them on in ⚙ Settings → Playback → **Subtitles / captions**, or while watching with the remote's menu (≡) button, a CC button, or the **CC** touch button. The choice is remembered.
+- Antenna channels show their broadcast closed captions.
+- Plex movies show subtitles stored in the file, and separate subtitle files (.srt, .ass, .vtt) that sit next to the movie on your Plex server. The player picks your device's language first, then English.
+- Text size and style follow Android's caption settings (Settings → Accessibility → Captions).
+
 **Starting up:** when the app starts, for example after the Shield reboots or when you open it on a tablet, it goes straight to the last channel you were watching, like a cable box. Press Back for the home screen. It happens once per start, never on later Home presses. To change it, go to ⚙ Settings → **When the app opens** → *Show the home screen*.
 
 | Remote | Action |
@@ -149,6 +154,7 @@ Pick a channel and it plays right away in the built-in player, straight from the
 | ⏪ / ⏩ | Back 30 s / forward 30 s. Skipping past the live point takes you back to live. |
 | Hold Left | Back to the channel you were just on |
 | Info | Show or hide the info banner |
+| Menu (≡) / CC | Subtitles / closed captions on or off |
 | 0–9 | Type a channel number (type `51` for 5.1) |
 | Back | Return home. This releases the tuner and clears the pause buffer. |
 

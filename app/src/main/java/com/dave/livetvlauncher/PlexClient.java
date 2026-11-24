@@ -172,6 +172,40 @@ public final class PlexClient {
 
     // ---- http ------------------------------------------------------------------------------
 
+    /** A subtitle file stored next to a movie on the Plex server (e.g. Movie.en.srt). */
+    public static final class SubFile {
+        public String url, mime, language, label;
+    }
+
+    /** The external subtitle files Plex knows for an item (embedded tracks play from the file itself). */
+    public List<SubFile> subtitleFiles(String base, String token, String ratingKey) throws Exception {
+        List<SubFile> out = new ArrayList<>();
+        JSONArray md = mc(request("GET", strip(base) + "/library/metadata/" + ratingKey, token)).optJSONArray("Metadata");
+        if (md == null || md.length() == 0) return out;
+        JSONArray media = md.getJSONObject(0).optJSONArray("Media");
+        if (media == null || media.length() == 0) return out;
+        JSONArray parts = media.getJSONObject(0).optJSONArray("Part");
+        if (parts == null || parts.length() == 0) return out;
+        JSONArray streams = parts.getJSONObject(0).optJSONArray("Stream");
+        for (int i = 0; streams != null && i < streams.length(); i++) {
+            JSONObject st = streams.getJSONObject(i);
+            String key = st.optString("key", "");
+            if (st.optInt("streamType") != 3 || key.isEmpty()) continue; // 3 = subtitles; a key = separate file
+            String codec = st.optString("codec", "").toLowerCase(java.util.Locale.US);
+            String mime = codec.equals("srt") || codec.equals("subrip") ? "application/x-subrip"
+                    : codec.equals("ass") || codec.equals("ssa") ? "text/x-ssa"
+                    : codec.equals("vtt") || codec.equals("webvtt") ? "text/vtt" : null;
+            if (mime == null) continue; // picture-based files can't be sideloaded
+            SubFile f = new SubFile();
+            f.url = strip(base) + key + (key.contains("?") ? "&" : "?") + "X-Plex-Token=" + URLEncoder.encode(token, "UTF-8");
+            f.mime = mime;
+            f.language = st.optString("languageCode", st.optString("language", ""));
+            f.label = st.optString("displayTitle", f.language);
+            out.add(f);
+        }
+        return out;
+    }
+
     private static JSONObject mc(String body) throws Exception {
         return new JSONObject(body).getJSONObject("MediaContainer");
     }
