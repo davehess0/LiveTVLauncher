@@ -505,7 +505,7 @@ public final class PlayerActivity extends Activity {
         guideList = new android.widget.ListView(this);
         guideList.setDivider(null);
         guideList.setDividerHeight(Ui.dp(this, 6));
-        guideList.setSelector(Ui.rounded(Ui.CARD_FOCUS, Ui.dp(this, 14), Ui.FOCUS_RING, Ui.ringPx(this)));
+        guideList.setSelector(Ui.focusedGlass(this, Ui.dp(this, 14)));
         guideList.setDrawSelectorOnTop(false);
         guideList.setVerticalScrollBarEnabled(false);
         guideList.setAdapter(new ChannelGuideAdapter());

@@ -126,7 +126,7 @@ public final class Apps {
                 : android.widget.ImageView.ScaleType.FIT_CENTER);
         int pad = e.isBanner ? 0 : Ui.dp(a, 14);
         iv.setPadding(pad, pad, pad, e.isBanner ? 0 : Ui.dp(a, 24));
-        iv.setClipToOutline(true);
+        Ui.roundCorners(iv, Ui.dp(a, 16));
         f.addView(iv, new android.widget.FrameLayout.LayoutParams(-1, -1));
         if (!e.isBanner) {
             android.widget.TextView l = Ui.text(a, 11, Ui.TEXT, false);

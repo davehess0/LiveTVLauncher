@@ -21,11 +21,11 @@ import java.util.Locale;
 
 /** Small view helpers so every layout shares the same look and D-pad focus behaviour. */
 public final class Ui {
-    // Apple TV-inspired: near-black ground, frosted-glass tiles, a white outline for focus, accents used sparingly.
+    // Apple TV-inspired: near-black ground, frosted-glass tiles, a soft white glow for focus, accents used sparingly.
     public static final int BG = 0xFF0A0A0C;
     public static final int CARD = 0x24FFFFFF;        // frosted glass
     public static final int CARD_FOCUS = 0x38FFFFFF;  // focused tile: slightly brighter glass...
-    public static final int FOCUS_RING = 0xFFFFFFFF;  // ...inside a white outline
+    public static final int FOCUS_GLOW = 0xFFFFFFFF;  // ...with a white glow fading out around it
     public static final int ACCENT = 0xFF64B5F6;      // live TV, used for small details only
     public static final int PLEX = 0xFFE5A00D;
     public static final int LIVE_RED = 0xFFE5484D;
@@ -63,7 +63,7 @@ public final class Ui {
         return g;
     }
 
-    /** Focusable card: outlined, lifted and slightly larger when focused. */
+    /** Focusable card: glows, lifts and grows slightly when focused. */
     public static LinearLayout card(Context c, int orientation, int accent) {
         LinearLayout l = new LinearLayout(c);
         l.setOrientation(orientation);
@@ -72,8 +72,8 @@ public final class Ui {
     }
 
     /**
-     * Text tiles and rows: glass at rest; when focused they get a white outline, a slightly
-     * brighter glass, lift and grow. Text keeps its colors.
+     * Text tiles and rows: glass at rest; when focused, a soft white glow around the edge that fades
+     * out into the background, slightly brighter glass, lift and grow. Text keeps its colors.
      */
     public static void styleFocusable(View v, int accent) {
         styleFocusable(v, 1.06f);
@@ -82,37 +82,82 @@ public final class Ui {
     public static void styleFocusable(View v, float focusScale) {
         Context c = v.getContext();
         float r = dp(c, 18);
-        StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, rounded(CARD_FOCUS, r, FOCUS_RING, ringPx(c)));
-        s.addState(new int[]{}, rounded(CARD, r, 0, 0));
-        v.setBackground(s);
+        v.setBackground(glassWithGlow(c, r, CARD));
         v.setFocusable(true);
         v.setClickable(true);
         v.setOnFocusChangeListener((view, has) -> lift(view, has, focusScale));
     }
 
-    /** Image tiles (app banners, posters): the same white outline, drawn over the picture, plus lift. */
+    /**
+     * Image tiles (app banners, posters): the same glow. The glow is drawn outside the tile, so the
+     * tile itself doesn't clip; call {@link #roundCorners} on its picture instead.
+     */
     public static void styleImageFocusable(View v, float focusScale) {
         Context c = v.getContext();
-        float r = dp(c, 16);
-        v.setBackground(rounded(CARD, r, 0, 0));
-        v.setForeground(focusRing(c, r));
-        v.setClipToOutline(true);
+        v.setBackground(glassWithGlow(c, dp(c, 16), CARD));
         v.setFocusable(true);
         v.setClickable(true);
         v.setOnFocusChangeListener((view, has) -> lift(view, has, focusScale));
     }
 
-    /** A see-through drawable that shows only the white outline while its view is focused. */
-    public static StateListDrawable focusRing(Context c, float radiusPx) {
+    /** Clips a view (e.g. a tile's picture) to rounded corners. */
+    public static void roundCorners(View v, float radiusPx) {
+        v.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override public void getOutline(View view, android.graphics.Outline o) {
+                o.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radiusPx);
+            }
+        });
+        v.setClipToOutline(true);
+    }
+
+    /** Glass background that also glows while its view is focused. */
+    public static StateListDrawable glassWithGlow(Context c, float radiusPx, int restFill) {
         StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, rounded(0, radiusPx, FOCUS_RING, ringPx(c)));
-        s.addState(new int[]{}, new android.graphics.drawable.ColorDrawable(0));
+        s.addState(new int[]{android.R.attr.state_focused}, focusedGlass(c, radiusPx));
+        s.addState(new int[]{}, rounded(restFill, radiusPx, 0, 0));
         return s;
     }
 
-    /** Outline thickness: 3 dp, which reads clearly from the couch. */
-    public static int ringPx(Context c) { return dp(c, 3); }
+    /** The focused look on its own: slightly brighter glass with the white glow around it. */
+    public static android.graphics.drawable.Drawable focusedGlass(Context c, float radiusPx) {
+        return new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{
+                new Glow(radiusPx, dp(c, 22)), rounded(CARD_FOCUS, radiusPx, 0, 0)});
+    }
+
+    /**
+     * A soft white halo just outside its bounds: rings that fade from bright at the edge to nothing
+     * {@code spreadPx} further out. Drawn as plain rings, which every Android version draws quickly.
+     */
+    public static final class Glow extends android.graphics.drawable.Drawable {
+        private static final int EDGE_ALPHA = 0x8C;
+        private final float radius, spread;
+        private final int steps;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF r = new RectF();
+
+        public Glow(float radiusPx, float spreadPx) {
+            radius = radiusPx;
+            spread = spreadPx;
+            // One ring per pixel, edge to edge without overlapping, so the fade is smooth (no bands).
+            steps = Math.max(8, Math.round(spreadPx));
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(spreadPx / steps);
+        }
+
+        @Override public void draw(Canvas canvas) {
+            android.graphics.Rect b = getBounds();
+            for (int i = 0; i < steps; i++) {
+                float t = (i + 0.5f) / steps, out = spread * t, fade = (1 - t) * (1 - t) * (1 - t);
+                paint.setColor(withAlpha(FOCUS_GLOW, Math.round(EDGE_ALPHA * fade)));
+                r.set(b.left - out, b.top - out, b.right + out, b.bottom + out);
+                canvas.drawRoundRect(r, radius + out, radius + out, paint);
+            }
+        }
+
+        @Override public void setAlpha(int alpha) { }
+        @Override public void setColorFilter(android.graphics.ColorFilter cf) { }
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
+    }
 
     public static void lift(View view, boolean has, float focusScale) {
         if (has) unclipPadding(view);
