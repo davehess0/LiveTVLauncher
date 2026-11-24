@@ -237,7 +237,6 @@ public final class GuideLayout extends HomeLayout {
         LinearLayout hero = new LinearLayout(c);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setPadding(dp(24), dp(22), dp(24), dp(22));
-        hero.setBackground(Ui.glass(c, Ui.PANEL, dp(24), false));
         // Live preview window (16:9-ish): the channel logo sits in it until the video starts.
         previewBox = new android.widget.FrameLayout(c);
         previewBox.setBackground(Ui.rounded(0xFF000000, dp(14), 0, 0));
@@ -271,30 +270,84 @@ public final class GuideLayout extends HomeLayout {
         heroProgress = new Ui.ProgressLine(c, Ui.TEXT);
         hero.addView(heroProgress, Ui.margins(Ui.lp(-1, dp(4)), 0, dp(12), 0, 0));
         // The description fills whatever room is left in the panel (a two-line title or "Up Next" take
-        // some of it) and shows only the lines that fit, ending in "…", so it's never cut mid-line.
-        heroSynopsis = new TextView(c) {
-            @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
-                super.onSizeChanged(w, h, ow, oh);
-                int room = h - getPaddingTop() - getPaddingBottom();
-                int lines = Math.max(0, room / Math.max(1, getLineHeight()));
-                if (lines != getMaxLines()) post(() -> setMaxLines(lines));
-            }
-        };
+        // some of it). At rest it shows only the lines that fit, ending in "…", so it's never cut
+        // mid-line; with the panel selected it shows in full and Up / Down scroll it.
+        heroSynopsis = new TextView(c);
         heroSynopsis.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
         heroSynopsis.setTextColor(0xFFD1D1D6);
         heroSynopsis.setIncludeFontPadding(false);
-        heroSynopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        heroSynopsis.setLineSpacing(0, 1.1f);
         heroSynopsis.setPadding(0, dp(12), 0, 0);
-        hero.addView(heroSynopsis, Ui.lpWeight(-1, 0, 1));
+        synScroll = new ScrollView(c) {
+            @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
+                super.onSizeChanged(w, h, ow, oh);
+                int room = h - heroSynopsis.getPaddingTop();
+                fitLines = Math.max(0, room / Math.max(1, heroSynopsis.getLineHeight()));
+                post(() -> expandSynopsis(heroExpanded));
+            }
+        };
+        synScroll.setVerticalScrollBarEnabled(false);
+        synScroll.setFocusable(false);
+        synScroll.setVerticalFadingEdgeEnabled(true);
+        synScroll.setFadingEdgeLength(dp(24));
+        synScroll.addView(heroSynopsis);
+        hero.addView(synScroll, Ui.lpWeight(-1, 0, 1));
         heroNext = Ui.text(c, 14, Ui.SUB, false);
         heroNext.setPadding(0, dp(10), 0, dp(4));
         hero.addView(heroNext);
+        heroHint = Ui.text(c, 12, Ui.ACCENT, true);
+        heroHint.setText("OK to watch  ·  ▲ ▼ read more  ·  ◀ back to the list");
+        heroHint.setPadding(0, dp(6), 0, 0);
+        heroHint.setVisibility(View.GONE);
+        hero.addView(heroHint);
         status = Ui.text(c, 12, Ui.DIM, false);
         hero.addView(status);
-        body.addView(hero, Ui.margins(Ui.lpWeight(0, -1, 1), dp(6), dp(18), 0, dp(24)));
 
-        root.addView(body, Ui.margins(Ui.lpWeight(-1, 0, 1), -dp(Ui.SIDE_DP), 0, 0, 0));
+        // The whole panel can be selected (Right from the list): it glows, OK opens the channel,
+        // Up / Down scroll the full description, Left goes back to that channel in the list.
+        hero.setBackground(Ui.glassWithGlow(c, dp(24), Ui.PANEL));
+        hero.setFocusable(true);
+        hero.setClickable(true);
+        hero.setOnClickListener(v -> { if (heroCh != null) host.play(heroCh); });
+        hero.setOnFocusChangeListener((v, has) -> {
+            expandSynopsis(has);
+            heroHint.setVisibility(has ? View.VISIBLE : View.GONE);
+            Ui.lift(v, has, 1f);
+        });
+        hero.setOnKeyListener((v, keyCode, e) -> {
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP || keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                    int step = heroSynopsis.getLineHeight() * 3;
+                    synScroll.smoothScrollBy(0, keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ? -step : step);
+                }
+                return true; // stay in the panel
+            }
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT && e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                for (Row r : rows) if (r.ch == heroCh) { r.view.requestFocus(); return true; }
+                focusDefault();
+                return true;
+            }
+            return false;
+        });
+        // Room on every side for the selected panel's glow (the body below clips at its edges).
+        body.addView(hero, Ui.margins(Ui.lpWeight(0, -1, 1), dp(16), dp(24), dp(Ui.SIDE_DP), dp(24)));
+
+        root.addView(body, Ui.margins(Ui.lpWeight(-1, 0, 1), -dp(Ui.SIDE_DP), 0, -dp(Ui.SIDE_DP), 0));
         return root;
+    }
+
+    private ScrollView synScroll;
+    private TextView heroHint;
+    private int fitLines = 3;
+    private boolean heroExpanded;
+
+    /** Full description (panel selected) or just the lines that fit, ending in "…". */
+    private void expandSynopsis(boolean full) {
+        heroExpanded = full;
+        heroSynopsis.setMaxLines(full ? Integer.MAX_VALUE : Math.max(1, fitLines));
+        heroSynopsis.setEllipsize(full ? null : android.text.TextUtils.TruncateAt.END);
+        heroSynopsis.setVisibility(!full && fitLines == 0 ? View.INVISIBLE : View.VISIBLE);
+        if (!full) synScroll.scrollTo(0, 0);
     }
 
     /** Recent Channels, with a clear gap before the full channel list when the row is showing. */

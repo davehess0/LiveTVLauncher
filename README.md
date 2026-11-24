@@ -134,6 +134,8 @@ Pick a channel and it plays right away in the built-in player, straight from the
 
 **Recent Channels:** every layout has a row of the last 10 channels you watched, newest first, each showing what's on now. In the Guide it sits above the channel list; on Channel Wall and Simple it's above Streaming.
 
+**The Guide's preview box:** press Right from the channel list to select it. Up / Down scroll through the full show description, OK opens the channel, and Left goes back to it in the list.
+
 **Live preview in the Guide:** when you rest on a channel in the Guide layout for about a second, its preview panel plays that channel live, without sound. The logo shows until the video starts. Channels the device can't decode use VLC, as in the full player. The preview uses one tuner while it plays and gives it back as soon as you open a channel, move to another row or leave the Guide. To turn it off, for example if your tuners are often all busy, go to ⚙ Settings → **Live preview in the guide**.
 
 **Starting up:** when the app starts, for example after the Shield reboots or when you open it on a tablet, it goes straight to the last channel you were watching, like a cable box. Press Back for the home screen. It happens once per start, never on later Home presses. To change it, go to ⚙ Settings → **When the app opens** → *Show the home screen*.
