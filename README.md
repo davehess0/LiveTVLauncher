@@ -16,10 +16,10 @@ your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zi
 ## Look and feel
 
 The design is inspired by Apple TV:
-- **Background:** soft art from whatever is selected (the current show, or a Plex movie's backdrop) fills the screen behind the menus, dimmed.
-- **Tiles:** frosted-glass tiles with no borders.
-- **Focus:** the selected item lifts and grows. Text tiles and list rows turn white with dark text; app banners and posters just lift with a shadow.
-- **App names:** they appear only under the selected streaming app.
+- **Background:** art from whatever is selected (the current show, or a Plex movie's backdrop) fills the screen behind the menus, dimmed. Full-size art is shown sharp; pictures too small for that become a soft blur of their colors.
+- **Tiles:** frosted-glass tiles with no borders. Scrolling rows run to the screen edges.
+- **Focus:** the selected item lifts, grows and gets a soft white glow that fades out around it. Text keeps its colors.
+- **Streaming apps:** shown as their banners only, with no names underneath.
 
 All of the colors are in `Ui.java` if you want to tune them.
 

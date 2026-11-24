@@ -76,10 +76,12 @@ public final class SimpleLayout extends HomeLayout {
         bottom.setPadding(0, dp(36), 0, 0);
         status = Ui.text(c, 13, Ui.DIM, false);
         bottom.addView(status, Ui.lpWeight(0, -2, 1));
+        // A small glass button in the same style as the tiles (white text, rounded glass, glow when selected).
         LinearLayout gear = Ui.card(c, LinearLayout.HORIZONTAL, Ui.SUB);
-        gear.setPadding(dp(14), dp(8), dp(14), dp(8));
-        TextView gt = Ui.text(c, 14, Ui.SUB, true);
-        gt.setText("⚙  Settings");
+        gear.setGravity(Gravity.CENTER_VERTICAL);
+        gear.setPadding(dp(20), dp(12), dp(22), dp(12));
+        TextView gt = Ui.text(c, 16, Ui.TEXT, true);
+        gt.setText("⚙   Settings");
         gear.addView(gt);
         gear.setOnClickListener(v -> host.openSettings());
         bottom.addView(gear);

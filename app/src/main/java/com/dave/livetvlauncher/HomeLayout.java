@@ -191,12 +191,7 @@ public abstract class HomeLayout {
         t.setOnClickListener(v -> host.openWeather());
         // No background at rest; when selected, the same glass and glow as every other tile.
         t.setBackground(Ui.glassWithGlow(c, dp(18), 0x00000000));
-        t.setOnFocusChangeListener((v, has) -> {
-            // The clock row would otherwise cut the glow off in a hard rectangle.
-            if (has && v.getParent() instanceof android.view.ViewGroup)
-                ((android.view.ViewGroup) v.getParent()).setClipChildren(false);
-            Ui.lift(v, has, 1.06f);
-        });
+        t.setOnFocusChangeListener((v, has) -> Ui.lift(v, has, 1.06f));
         return t;
     }
 
@@ -266,22 +261,8 @@ public abstract class HomeLayout {
             row.addView(t);
         }
         for (Apps.AppEntry e : pins) {
-            LinearLayout col = new LinearLayout(c);
-            col.setOrientation(LinearLayout.VERTICAL);
-            col.setClipChildren(false);
-            View tile = appTile(e);
-            col.addView(tile, Ui.lp(dp(wDp), dp(hDp)));
-            TextView label = Ui.text(c, 14, Ui.TEXT, true);
-            label.setText(e.label);
-            label.setGravity(Gravity.CENTER);
-            label.setPadding(0, dp(14), 0, 0);
-            label.setVisibility(View.INVISIBLE);
-            col.addView(label, Ui.lp(dp(wDp), -2));
-            tile.setOnFocusChangeListener((v, has) -> {
-                Ui.lift(v, has, 1.1f);
-                label.setVisibility(has ? View.VISIBLE : View.INVISIBLE);
-            });
-            row.addView(col, Ui.margins(Ui.lp(-2, -2), 0, 0, dp(24), 0));
+            // Just the banner: the app's own logo says what it is.
+            row.addView(appTile(e), Ui.margins(Ui.lp(dp(wDp), dp(hDp)), 0, 0, dp(24), 0));
         }
         sv.addView(row);
         return bleed(sv);

@@ -167,14 +167,15 @@ public final class Ui {
     }
 
     /**
-     * A container cuts its children off at its padding even when it lets them draw outside its
-     * bounds, which chopped the edges of a tile as it grew. The first time a tile is focused, the
-     * containers above it stop doing that. (Containers that must clip, like the Guide's channel list,
-     * do so with clipChildren, which this leaves alone.)
+     * Lets a focused tile's growth and glow show past its row. Its own row stops clipping it, and
+     * every container above it stops cutting children off at its padding (they do that even when they
+     * let children draw outside their bounds). Done the first time the tile is focused. Containers
+     * further up that must clip, like the Guide's channel list, keep doing so.
      */
     private static void unclipPadding(View v) {
         if (Boolean.TRUE.equals(v.getTag(R_UNCLIPPED))) return;
         v.setTag(R_UNCLIPPED, Boolean.TRUE);
+        if (v.getParent() instanceof android.view.ViewGroup) ((android.view.ViewGroup) v.getParent()).setClipChildren(false);
         for (android.view.ViewParent p = v.getParent(); p instanceof android.view.ViewGroup; p = p.getParent()) {
             android.view.ViewGroup g = (android.view.ViewGroup) p;
             if (g.getId() == android.R.id.content) break;
