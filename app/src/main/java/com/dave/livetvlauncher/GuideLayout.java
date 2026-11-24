@@ -270,15 +270,25 @@ public final class GuideLayout extends HomeLayout {
         hero.addView(heroMeta);
         heroProgress = new Ui.ProgressLine(c, Ui.TEXT);
         hero.addView(heroProgress, Ui.margins(Ui.lp(-1, dp(4)), 0, dp(12), 0, 0));
-        heroSynopsis = Ui.text(c, 14, 0xFFD1D1D6, false);
-        heroSynopsis.setSingleLine(false);
-        heroSynopsis.setMaxLines(prefs.livePreview() ? 2 : 3); // the preview window takes some of the room
+        // The description fills whatever room is left in the panel (a two-line title or "Up Next" take
+        // some of it) and shows only the lines that fit, ending in "…", so it's never cut mid-line.
+        heroSynopsis = new TextView(c) {
+            @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
+                super.onSizeChanged(w, h, ow, oh);
+                int room = h - getPaddingTop() - getPaddingBottom();
+                int lines = Math.max(0, room / Math.max(1, getLineHeight()));
+                if (lines != getMaxLines()) post(() -> setMaxLines(lines));
+            }
+        };
+        heroSynopsis.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
+        heroSynopsis.setTextColor(0xFFD1D1D6);
+        heroSynopsis.setIncludeFontPadding(false);
+        heroSynopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);
         heroSynopsis.setPadding(0, dp(12), 0, 0);
-        hero.addView(heroSynopsis);
+        hero.addView(heroSynopsis, Ui.lpWeight(-1, 0, 1));
         heroNext = Ui.text(c, 14, Ui.SUB, false);
-        heroNext.setPadding(0, dp(12), 0, 0);
+        heroNext.setPadding(0, dp(10), 0, dp(4));
         hero.addView(heroNext);
-        hero.addView(new View(c), Ui.lpWeight(-1, 0, 1));
         status = Ui.text(c, 12, Ui.DIM, false);
         hero.addView(status);
         body.addView(hero, Ui.margins(Ui.lpWeight(0, -1, 1), dp(6), dp(18), 0, dp(24)));
