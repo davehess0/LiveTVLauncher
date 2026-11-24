@@ -129,8 +129,9 @@ public final class GuideLayout extends HomeLayout {
     @Override public View create() {
         LinearLayout root = new LinearLayout(c);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(48), dp(22), dp(48), dp(0));
+        root.setPadding(dp(Ui.SIDE_DP), dp(22), dp(Ui.SIDE_DP), dp(0));
         root.setClipChildren(false);
+        root.setClipToPadding(false); // focused tiles at the edges grow into the margin instead of being cut off
 
         // Top bar: title, quick actions as small glass pills, clock (no heavy chrome).
         LinearLayout top = new LinearLayout(c);
@@ -239,6 +240,9 @@ public final class GuideLayout extends HomeLayout {
         root.addView(body, Ui.lpWeight(-1, 0, 1));
         return root;
     }
+
+    /** Recent Channels and Plex rows stay inside the channel-list column. */
+    @Override protected boolean fullBleedRows() { return false; }
 
     private View pill(String label, View.OnClickListener click) {
         LinearLayout p = Ui.card(c, LinearLayout.HORIZONTAL, 0);

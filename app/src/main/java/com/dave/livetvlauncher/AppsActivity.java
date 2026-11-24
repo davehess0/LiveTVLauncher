@@ -11,7 +11,8 @@ import java.util.List;
 
 /** Grid of every app allowed in the current profile. */
 public final class AppsActivity extends Activity {
-    private static final int COLUMNS = 5;
+    private static final int COLUMNS = 4;
+    private static final int GAP_DP = 24;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -21,8 +22,13 @@ public final class AppsActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setClipChildren(false);
-        int p = Ui.dp(this, 48);
-        root.setPadding(p, p / 2, p, p);
+        root.setClipToPadding(false); // tiles at the edges grow into the margin instead of being cut off
+        int side = Ui.dp(this, Ui.SIDE_DP), p = Ui.dp(this, 48);
+        root.setPadding(side, p / 2, side, p);
+        // Tiles are 16:9, the shape of Android TV app banners, so logos show whole instead of cropped.
+        int gap = Ui.dp(this, GAP_DP);
+        int tileW = (getResources().getDisplayMetrics().widthPixels - 2 * side - (COLUMNS - 1) * gap) / COLUMNS;
+        int tileH = tileW * 9 / 16;
 
         TextView title = Ui.text(this, 26, Ui.TEXT, true);
         title.setText("Apps");
@@ -40,16 +46,11 @@ public final class AppsActivity extends Activity {
             if (i % COLUMNS == 0) {
                 row = new LinearLayout(this);
                 row.setClipChildren(false);
-                root.addView(row, Ui.margins(Ui.lp(-1, Ui.dp(this, 110)), 0, 0, 0, Ui.dp(this, 20)));
+                root.addView(row, Ui.margins(Ui.lp(-1, tileH), 0, 0, 0, gap));
             }
             View t = Apps.tile(this, apps.get(i));
             if (first == null) first = t;
-            row.addView(t, Ui.margins(Ui.lpWeight(0, -1, 1), 0, 0, Ui.dp(this, 20), 0));
-        }
-        if (row != null) {
-            for (int i = apps.size() % COLUMNS; i != 0 && i < COLUMNS; i++) {
-                row.addView(new View(this), Ui.margins(Ui.lpWeight(0, 1, 1), 0, 0, Ui.dp(this, 20), 0));
-            }
+            row.addView(t, Ui.margins(Ui.lp(tileW, -1), 0, 0, gap, 0));
         }
         sv.addView(root);
         setContentView(sv);

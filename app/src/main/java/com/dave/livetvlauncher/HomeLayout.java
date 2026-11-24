@@ -49,6 +49,28 @@ public abstract class HomeLayout {
 
     protected int dp(float v) { return Ui.dp(c, v); }
 
+    /**
+     * Whether the Recent Channels and Plex rows run to the screen edges. The Guide keeps them inside
+     * its channel-list column instead.
+     */
+    protected boolean fullBleedRows() { return true; }
+
+    /**
+     * Lets a scrolling row run under the page margins to both screen edges (like Apple TV) while its
+     * first tile still lines up with the page. Also leaves room for the edge tiles to grow on focus.
+     */
+    protected android.widget.HorizontalScrollView bleed(android.widget.HorizontalScrollView sv) {
+        int s = dp(Ui.SIDE_DP);
+        sv.setLayoutParams(Ui.margins(Ui.lp(-1, -2), -s, 0, -s, 0));
+        View row = sv.getChildAt(0);
+        if (row != null) row.setPadding(row.getPaddingLeft() + s, row.getPaddingTop(), row.getPaddingRight() + s, row.getPaddingBottom());
+        // While scrolling, keep the focused tile this far from the screen edge (so it isn't cut when it
+        // grows), and fade tiles out softly at the edges.
+        sv.setHorizontalFadingEdgeEnabled(true);
+        sv.setFadingEdgeLength(s + dp(16));
+        return sv;
+    }
+
     protected long now() { return System.currentTimeMillis() / 1000L; }
 
     // ---- shared building blocks -------------------------------------------------------------
@@ -209,7 +231,7 @@ public abstract class HomeLayout {
             row.addView(appTile(e), Ui.margins(Ui.lp(dp(160), dp(90)), 0, 0, dp(14), 0));
         }
         sv.addView(row);
-        return sv;
+        return bleed(sv);
     }
 
     /** Plex rows arrived or changed. Layouts that show Plex override this. */
@@ -258,7 +280,7 @@ public abstract class HomeLayout {
             row.addView(col, Ui.margins(Ui.lp(-2, -2), 0, 0, dp(24), 0));
         }
         sv.addView(row);
-        return sv;
+        return bleed(sv);
     }
 
     /** A horizontal row of Plex posters. Returns null when there's nothing to show. */
@@ -307,7 +329,7 @@ public abstract class HomeLayout {
             row.addView(col, Ui.margins(Ui.lp(-2, -2), 0, 0, dp(22), 0));
         }
         sv.addView(row);
-        return sv;
+        return fullBleedRows() ? bleed(sv) : sv;
     }
 
     // ---- Recent channels ----
@@ -382,7 +404,7 @@ public abstract class HomeLayout {
             if (ch.number.equals(focusedNum)) refocus = v;
         }
         sv.addView(row);
-        box.addView(sv);
+        box.addView(fullBleedRows() ? bleed(sv) : sv);
         refreshRecent();
         if (refocus != null) refocus.requestFocus();
     }

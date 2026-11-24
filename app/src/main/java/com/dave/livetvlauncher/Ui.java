@@ -34,6 +34,9 @@ public final class Ui {
     public static final int SUB = 0xFFA1A1A6;
     public static final int DIM = 0xFF8E8E93;
 
+    /** Left / right page margin (dp). Scrolling rows run past it to the screen edges. */
+    public static final int SIDE_DP = 28;
+
     private Ui() {}
 
     public static int dp(Context c, float v) {
@@ -104,10 +107,29 @@ public final class Ui {
 
     public static void lift(View view, boolean has, float focusScale) {
         refreshStates(view);
+        if (has) unclipPadding(view);
         float scale = has ? focusScale : 1f;
         view.animate().scaleX(scale).scaleY(scale).translationZ(has ? dp(view.getContext(), 18) : 0)
                 .setDuration(160).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
     }
+
+    /**
+     * A container cuts its children off at its padding even when it lets them draw outside its
+     * bounds, which chopped the edges of a tile as it grew. The first time a tile is focused, the
+     * containers above it stop doing that. (Containers that must clip, like the Guide's channel list,
+     * do so with clipChildren, which this leaves alone.)
+     */
+    private static void unclipPadding(View v) {
+        if (Boolean.TRUE.equals(v.getTag(R_UNCLIPPED))) return;
+        v.setTag(R_UNCLIPPED, Boolean.TRUE);
+        for (android.view.ViewParent p = v.getParent(); p instanceof android.view.ViewGroup; p = p.getParent()) {
+            android.view.ViewGroup g = (android.view.ViewGroup) p;
+            if (g.getId() == android.R.id.content) break;
+            g.setClipToPadding(false);
+        }
+    }
+
+    private static final int R_UNCLIPPED = R.id.padding_unclipped;
 
     /**
      * Pushes the tile's focused / unfocused state to its labels. Android only does this by itself

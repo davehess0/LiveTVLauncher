@@ -257,8 +257,9 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     private void swapBackdrop() {
         final String url = backdropUrl;
         backdrop.animate().alpha(0f).setDuration(180).withEndAction(() -> {
-            // Decoding small and stretching it gives a soft, out-of-focus look without a blur API.
-            ImageLoader.load(backdrop, url, 320);
+            // Full-size art is shown sharp; small pictures become a smooth blur rather than a pixelated stretch.
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            ImageLoader.loadBackdrop(backdrop, url, Math.max(dm.widthPixels, dm.heightPixels));
             backdrop.animate().alpha(0.55f).setDuration(420).start();
         }).start();
     }

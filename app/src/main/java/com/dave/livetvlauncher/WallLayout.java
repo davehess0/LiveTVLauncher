@@ -36,8 +36,9 @@ public final class WallLayout extends HomeLayout {
         sv.setClipChildren(false);
         LinearLayout root = new LinearLayout(c);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(48), dp(28), dp(48), dp(40));
+        root.setPadding(dp(Ui.SIDE_DP), dp(28), dp(Ui.SIDE_DP), dp(40));
         root.setClipChildren(false);
+        root.setClipToPadding(false); // focused tiles at the edges grow into the margin instead of being cut off
 
         status = Ui.text(c, 13, Ui.SUB, false);
         clock = Ui.text(c, 22, Ui.TEXT, true);

@@ -38,6 +38,72 @@ public final class ImageLoader {
         });
     }
 
+    // ---- Full-screen background art ----
+
+    /** Kept apart from the tile cache: a full-screen picture is large, so only the last few are kept. */
+    private static final LruCache<String, Bitmap> BACKDROPS = new LruCache<>(3);
+
+    /** Art at least this wide (px) is shown sharp; anything smaller would look pixelated when stretched. */
+    private static final int SHARP_MIN_WIDTH = 1000;
+
+    /**
+     * Loads background art for the whole screen. Large pictures are shown as they are (sharp); small
+     * ones (most guide stills and channel logos) become a smooth blur of their colors instead of a
+     * blown-up, pixelated copy.
+     */
+    public static void loadBackdrop(final ImageView view, final String url, final int screenPx) {
+        view.setTag(url);
+        if (url == null) { view.setImageDrawable(null); return; }
+        Bitmap hit = BACKDROPS.get(url);
+        if (hit != null) { view.setImageBitmap(hit); return; }
+        POOL.execute(() -> {
+            Bitmap b = fetch(url, screenPx);
+            if (b == null) return;
+            Bitmap shown = b.getWidth() >= SHARP_MIN_WIDTH ? b : blurred(b);
+            if (shown != b) b.recycle();
+            BACKDROPS.put(url, shown);
+            MAIN.post(() -> { if (url.equals(view.getTag())) view.setImageBitmap(shown); });
+        });
+    }
+
+    /**
+     * A soft, out-of-focus version: shrink to a few dozen pixels, blur that, then enlarge with
+     * smoothing. Enlarging a tiny blurred picture gives clean gradients instead of visible pixels.
+     */
+    private static Bitmap blurred(Bitmap src) {
+        int w = 48, h = Math.max(1, Math.round(48f * src.getHeight() / Math.max(1, src.getWidth())));
+        Bitmap small = Bitmap.createScaledBitmap(src, w, h, true);
+        int[] px = new int[w * h];
+        small.getPixels(px, 0, w, 0, 0, w, h);
+        small.recycle();
+        for (int pass = 0; pass < 3; pass++) boxBlur(px, w, h, 2);
+        Bitmap blur = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
+        Bitmap big = Bitmap.createScaledBitmap(blur, 480, Math.max(1, Math.round(480f * h / w)), true);
+        blur.recycle();
+        return big;
+    }
+
+    /** One horizontal and one vertical box-blur pass of the given radius, in place. */
+    private static void boxBlur(int[] px, int w, int h, int r) {
+        int[] tmp = new int[px.length];
+        for (int pass = 0; pass < 2; pass++) {
+            boolean horiz = pass == 0;
+            int lines = horiz ? h : w, len = horiz ? w : h;
+            for (int line = 0; line < lines; line++) {
+                for (int i = 0; i < len; i++) {
+                    int a = 0, rr = 0, g = 0, bb = 0, n = 0;
+                    for (int k = Math.max(0, i - r); k <= Math.min(len - 1, i + r); k++) {
+                        int p = horiz ? px[line * w + k] : px[k * w + line];
+                        a += p >>> 24; rr += (p >> 16) & 0xFF; g += (p >> 8) & 0xFF; bb += p & 0xFF; n++;
+                    }
+                    int idx = horiz ? line * w + i : i * w + line;
+                    tmp[idx] = (a / n) << 24 | (rr / n) << 16 | (g / n) << 8 | (bb / n);
+                }
+            }
+            System.arraycopy(tmp, 0, px, 0, px.length);
+        }
+    }
+
     private static Bitmap fetch(String url, int maxPx) {
         HttpURLConnection c = null;
         try {

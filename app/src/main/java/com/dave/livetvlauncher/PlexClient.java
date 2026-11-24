@@ -141,7 +141,7 @@ public final class PlexClient {
         }
         String art = episode ? m.optString("grandparentArt", m.optString("art", "")) : m.optString("art", "");
         if (!art.isEmpty()) {
-            it.artUrl = base + "/photo/:/transcode?width=960&height=540&minSize=1&upscale=1&url="
+            it.artUrl = base + "/photo/:/transcode?width=1920&height=1080&minSize=1&upscale=1&url="
                     + URLEncoder.encode(art, "UTF-8") + "&X-Plex-Token=" + URLEncoder.encode(token, "UTF-8");
         }
         JSONArray media = m.optJSONArray("Media");

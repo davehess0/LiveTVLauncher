@@ -27,8 +27,9 @@ public final class SimpleLayout extends HomeLayout {
         LinearLayout root = new LinearLayout(c);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(64), dp(32), dp(64), dp(32));
+        root.setPadding(dp(Ui.SIDE_DP), dp(32), dp(Ui.SIDE_DP), dp(32));
         root.setClipChildren(false);
+        root.setClipToPadding(false); // focused tiles at the edges grow into the margin instead of being cut off
 
         LinearLayout clockRow = new LinearLayout(c);
         clockRow.setGravity(Gravity.CENTER);
