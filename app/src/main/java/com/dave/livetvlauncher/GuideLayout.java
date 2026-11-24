@@ -147,7 +147,6 @@ public final class GuideLayout extends HomeLayout {
         firstAction = pill("Last Channel", v -> host.resumeLastChannel());
         top.addView(firstAction, pillLp());
         top.addView(pill("HDHomeRun", v -> Apps.launch(host, Apps.HDHR)), pillLp());
-        top.addView(pill("Plex Live TV", v -> Apps.launch(host, Apps.PLEX)), pillLp());
         if (host.hasCameras()) top.addView(pill("Cameras", v -> host.openCameras()), pillLp());
         top.addView(pill("Apps", v -> host.openApps()), pillLp());
         top.addView(pill("Settings", v -> host.openSettings()), pillLp());

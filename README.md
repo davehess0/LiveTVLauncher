@@ -1,6 +1,6 @@
 # Live TV Home — an ad-free launcher for the NVIDIA Shield (2019)
 
-A home screen built around live TV from your **HDHomeRun**, with **Plex Live TV** one press away.
+A home screen built around live TV from your **HDHomeRun**, with **Plex** one press away in the Streaming row.
 Your streaming apps (YouTube, Prime Video, Disney+, Plex) and your Plex movies sit right on the home screen too.
 No ads, no tracking. The app only talks to your HDHomeRun tuner, `api.hdhomerun.com` for guide data,
 your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, your Plex server and `plex.tv` for the one-time sign-in if you link Plex, and GitHub only when you press **Check for updates**.
@@ -176,7 +176,7 @@ You can change this in Settings → **Play channels with**:
 - MPEG-TS streams get full pause and rewind. HLS (`.m3u8`), DASH, RTMP and RTSP streams play directly, and pause / rewind work within the stream's own live window. Formats the built-in player can't decode switch to VLC as usual.
 - Playlist and guide links often contain your username and password. The TV shows only the host name, and the log masks them.
 
-**Plex Live TV:** the Plex tile opens the Plex app. Plex doesn't allow other apps to open its Live TV screen or tune a channel directly, so you choose Live TV inside Plex. If your Plex DVR uses this same HDHomeRun, those channels are already in this launcher's guide.
+**Plex Live TV:** open Plex from the Streaming row. Plex doesn't allow other apps to open its Live TV screen or tune a channel directly, so you choose Live TV inside Plex. If your Plex DVR uses this same HDHomeRun, those channels are already in this launcher's guide.
 
 ## Build the APK
 
