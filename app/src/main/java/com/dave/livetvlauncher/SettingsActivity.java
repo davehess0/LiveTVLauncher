@@ -144,15 +144,13 @@ public final class SettingsActivity extends Activity {
                 Toast.makeText(this, "Refreshing…", Toast.LENGTH_SHORT).show();
             });
             row("Log", "Today's events and errors · kept " + AppLog.KEEP_DAYS + " days", v -> showLog());
-            row("Android settings", "Wi-Fi, display, sound, restricted profile", v -> Apps.openSystemSettings(this));
+            row("Android settings", "Wi-Fi, display, sound" + (isRestrictedProfile() ? ", restricted profile" : ""), v -> Apps.openSystemSettings(this));
         });
 
         TextView about = Ui.text(this, 14, Ui.SUB, false);
         about.setSingleLine(false);
         about.setPadding(0, Ui.dp(this, 24), 0, 0);
-        about.setText("Live TV Home 1.0 — no ads, no tracking, no accounts.\n"
-                + "Only talks to your HDHomeRun, api.hdhomerun.com (guide data), your Tunarr server and IPTV playlist / guide if you add them, "
-                + "Open-Meteo if you turn on weather (RainViewer and Esri maps for the radar, weather.gov for alerts), and — if you link it — your Plex server and plex.tv (sign-in).");
+        about.setText("Live TV Home 1.0 — no ads, no tracking, no accounts.");
         list.addView(about);
         View target = keep != null ? list.findViewWithTag(keep) : null;
         if (target == null) target = list.getChildAt(1); // first row
@@ -442,6 +440,23 @@ public final class SettingsActivity extends Activity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    /**
+     * True only inside an Android restricted profile. Such a profile is never the device's main user
+     * and always has "modify accounts" blocked; Android's own isRestrictedProfile() is checked first
+     * where the system allows it.
+     */
+    private boolean isRestrictedProfile() {
+        android.os.UserManager um = (android.os.UserManager) getSystemService(USER_SERVICE);
+        if (um == null) return false;
+        try {
+            Object r = android.os.UserManager.class.getMethod("isRestrictedProfile").invoke(um);
+            if (r instanceof Boolean) return (Boolean) r;
+        } catch (Throwable ignored) {
+            // Hidden on this Android version: fall back to the profile's restrictions.
+        }
+        return !um.isSystemUser() && um.getUserRestrictions().getBoolean(android.os.UserManager.DISALLOW_MODIFY_ACCOUNTS, false);
     }
 
     /** Just the host, so playlist links with a username / password in them aren't shown on the TV. */
