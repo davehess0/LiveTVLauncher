@@ -186,7 +186,7 @@ public final class SettingsActivity extends Activity {
     private void row(String label, String value, View.OnClickListener click) {
         LinearLayout r = Ui.card(this, LinearLayout.HORIZONTAL, Ui.ACCENT);
         r.setTag(label);
-        Ui.styleFocusable(r, 1.0f); // white-on-focus, no zoom in a settings list
+        Ui.styleFocusable(r, 1.0f); // outline on focus, no zoom in a settings list
         r.setGravity(Gravity.CENTER_VERTICAL);
         int p = Ui.dp(this, 18);
         r.setPadding(p, p, p, p);

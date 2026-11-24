@@ -290,7 +290,7 @@ public final class GuideLayout extends HomeLayout {
         v.setPadding(dp(18), dp(11), dp(18), dp(11));
         // Rows zoom less than tiles; a long list wobbling looks busy.
         v.setOnFocusChangeListener((view, has) -> {
-            if (has) { Ui.adoptFocusColors(view); showHero(ch); }
+            if (has) showHero(ch);
             Ui.lift(view, has, 1.02f);
         });
 
@@ -383,7 +383,6 @@ public final class GuideLayout extends HomeLayout {
         for (Row r : rows) {
             if (r.ch == last) {
                 r.view.requestFocus();     // scrolls the list to it
-                Ui.adoptFocusColors(r.view);
                 showHero(last);            // in case that row already had focus (no focus change event)
                 return;
             }

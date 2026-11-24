@@ -157,7 +157,6 @@ public final class WallLayout extends HomeLayout {
         v.setOnClickListener(x -> host.play(ch));
         v.setOnFocusChangeListener((x, has) -> {
             if (has) {
-                Ui.adoptFocusColors(x);
                 Channel.Airing a = ch.now(now());
                 host.setBackdrop(a != null && a.imageUrl != null ? a.imageUrl : ch.logoUrl);
             }

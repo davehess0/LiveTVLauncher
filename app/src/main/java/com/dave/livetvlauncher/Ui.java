@@ -21,12 +21,11 @@ import java.util.Locale;
 
 /** Small view helpers so every layout shares the same look and D-pad focus behaviour. */
 public final class Ui {
-    // Apple TV-inspired: near-black ground, frosted-glass tiles, white focus, accents used sparingly.
+    // Apple TV-inspired: near-black ground, frosted-glass tiles, a white outline for focus, accents used sparingly.
     public static final int BG = 0xFF0A0A0C;
     public static final int CARD = 0x24FFFFFF;        // frosted glass
-    public static final int CARD_FOCUS = 0xFFF5F5F7;  // focused tile turns white
-    public static final int ON_FOCUS = 0xFF1C1C1E;    // text on a focused (white) tile
-    public static final int ON_FOCUS_SUB = 0xFF6E6E73;
+    public static final int CARD_FOCUS = 0x38FFFFFF;  // focused tile: slightly brighter glass...
+    public static final int FOCUS_RING = 0xFFFFFFFF;  // ...inside a white outline
     public static final int ACCENT = 0xFF64B5F6;      // live TV, used for small details only
     public static final int PLEX = 0xFFE5A00D;
     public static final int LIVE_RED = 0xFFE5484D;
@@ -64,7 +63,7 @@ public final class Ui {
         return g;
     }
 
-    /** Focusable card: highlighted border + gentle zoom when focused. */
+    /** Focusable card: outlined, lifted and slightly larger when focused. */
     public static LinearLayout card(Context c, int orientation, int accent) {
         LinearLayout l = new LinearLayout(c);
         l.setOrientation(orientation);
@@ -73,8 +72,8 @@ public final class Ui {
     }
 
     /**
-     * Text tiles and rows: glass at rest; when focused they turn white, lift and grow,
-     * and their text flips dark (like tvOS buttons and list rows).
+     * Text tiles and rows: glass at rest; when focused they get a white outline, a slightly
+     * brighter glass, lift and grow. Text keeps its colors.
      */
     public static void styleFocusable(View v, int accent) {
         styleFocusable(v, 1.06f);
@@ -84,29 +83,38 @@ public final class Ui {
         Context c = v.getContext();
         float r = dp(c, 18);
         StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, rounded(CARD_FOCUS, r, 0, 0));
+        s.addState(new int[]{android.R.attr.state_focused}, rounded(CARD_FOCUS, r, FOCUS_RING, ringPx(c)));
         s.addState(new int[]{}, rounded(CARD, r, 0, 0));
         v.setBackground(s);
         v.setFocusable(true);
         v.setClickable(true);
-        v.setOnFocusChangeListener((view, has) -> {
-            if (has) adoptFocusColors(view);
-            lift(view, has, focusScale);
-        });
+        v.setOnFocusChangeListener((view, has) -> lift(view, has, focusScale));
     }
 
-    /** Image tiles (app banners, posters): no white plate, just lift, grow and cast a shadow. */
+    /** Image tiles (app banners, posters): the same white outline, drawn over the picture, plus lift. */
     public static void styleImageFocusable(View v, float focusScale) {
         Context c = v.getContext();
-        v.setBackground(rounded(CARD, dp(c, 16), 0, 0));
+        float r = dp(c, 16);
+        v.setBackground(rounded(CARD, r, 0, 0));
+        v.setForeground(focusRing(c, r));
         v.setClipToOutline(true);
         v.setFocusable(true);
         v.setClickable(true);
         v.setOnFocusChangeListener((view, has) -> lift(view, has, focusScale));
     }
 
+    /** A see-through drawable that shows only the white outline while its view is focused. */
+    public static StateListDrawable focusRing(Context c, float radiusPx) {
+        StateListDrawable s = new StateListDrawable();
+        s.addState(new int[]{android.R.attr.state_focused}, rounded(0, radiusPx, FOCUS_RING, ringPx(c)));
+        s.addState(new int[]{}, new android.graphics.drawable.ColorDrawable(0));
+        return s;
+    }
+
+    /** Outline thickness: 3 dp, which reads clearly from the couch. */
+    public static int ringPx(Context c) { return dp(c, 3); }
+
     public static void lift(View view, boolean has, float focusScale) {
-        refreshStates(view);
         if (has) unclipPadding(view);
         float scale = has ? focusScale : 1f;
         view.animate().scaleX(scale).scaleY(scale).translationZ(has ? dp(view.getContext(), 18) : 0)
@@ -130,55 +138,6 @@ public final class Ui {
     }
 
     private static final int R_UNCLIPPED = R.id.padding_unclipped;
-
-    /**
-     * Pushes the tile's focused / unfocused state to its labels. Android only does this by itself
-     * for children that copied the parent's state before they were added, and adoptFocusColors()
-     * turns that on afterwards, so the labels would otherwise keep their old colors.
-     */
-    private static void refreshStates(View v) {
-        if (!(v instanceof android.view.ViewGroup)) return;
-        android.view.ViewGroup g = (android.view.ViewGroup) v;
-        for (int i = 0; i < g.getChildCount(); i++) {
-            View child = g.getChildAt(i);
-            if (child.isDuplicateParentStateEnabled()) {
-                child.refreshDrawableState();
-                refreshStates(child);
-            }
-        }
-    }
-
-    /** Makes every label inside a tile switch to dark text while the tile is focused (white). */
-    public static void adoptFocusColors(View root) {
-        if (Boolean.TRUE.equals(root.getTag(R_TAG))) return;
-        root.setTag(R_TAG, Boolean.TRUE);
-        if (root instanceof android.view.ViewGroup) {
-            android.view.ViewGroup g = (android.view.ViewGroup) root;
-            for (int i = 0; i < g.getChildCount(); i++) adopt(g.getChildAt(i));
-        }
-        root.refreshDrawableState();
-    }
-
-    private static void adopt(View child) {
-        if (child.getBackground() != null) return; // badges, pills, logos keep their own look
-        child.setDuplicateParentStateEnabled(true);
-        if (child instanceof TextView) {
-            TextView t = (TextView) child;
-            int rest = t.getCurrentTextColor();
-            int focused = (rest == TEXT) ? ON_FOCUS : (rest == SUB || rest == DIM) ? ON_FOCUS_SUB : darken(rest);
-            t.setTextColor(new android.content.res.ColorStateList(
-                    new int[][]{{android.R.attr.state_focused}, {}}, new int[]{focused, rest}));
-        } else if (child instanceof android.view.ViewGroup) {
-            android.view.ViewGroup g = (android.view.ViewGroup) child;
-            for (int i = 0; i < g.getChildCount(); i++) adopt(g.getChildAt(i));
-        }
-    }
-
-    private static int darken(int c) {
-        return Color.rgb(Color.red(c) * 6 / 10, Color.green(c) * 6 / 10, Color.blue(c) * 6 / 10);
-    }
-
-    private static final int R_TAG = R.id.focus_colors_applied;
 
     public static LinearLayout.LayoutParams lp(int w, int h) {
         return new LinearLayout.LayoutParams(w, h);

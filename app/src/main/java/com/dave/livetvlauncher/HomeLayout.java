@@ -190,8 +190,7 @@ public abstract class HomeLayout {
         t.setClickable(true);
         t.setOnClickListener(v -> host.openWeather());
         t.setOnFocusChangeListener((v, has) -> {
-            v.setBackground(has ? Ui.rounded(Ui.TEXT, dp(18), 0, 0) : null);
-            ((TextView) v).setTextColor(has ? 0xFF000000 : Ui.TEXT);
+            v.setBackground(has ? Ui.rounded(Ui.CARD_FOCUS, dp(18), Ui.FOCUS_RING, Ui.ringPx(c)) : null);
         });
         return t;
     }
@@ -396,7 +395,7 @@ public abstract class HomeLayout {
             v.addView(t.progress, Ui.margins(Ui.lp(-1, dp(4)), 0, dp(8), 0, 0));
             v.setOnClickListener(x -> host.play(ch));
             v.setOnFocusChangeListener((x, has) -> {
-                if (has) { Ui.adoptFocusColors(x); onRecentFocused(ch); }
+                if (has) onRecentFocused(ch);
                 Ui.lift(x, has, 1.06f);
             });
             row.addView(v, Ui.margins(Ui.lp(dp(tileWDp), -2), 0, 0, dp(16), 0));

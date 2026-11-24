@@ -505,7 +505,7 @@ public final class PlayerActivity extends Activity {
         guideList = new android.widget.ListView(this);
         guideList.setDivider(null);
         guideList.setDividerHeight(Ui.dp(this, 6));
-        guideList.setSelector(Ui.rounded(Ui.TEXT, Ui.dp(this, 14), 0, 0));
+        guideList.setSelector(Ui.rounded(Ui.CARD_FOCUS, Ui.dp(this, 14), Ui.FOCUS_RING, Ui.ringPx(this)));
         guideList.setDrawSelectorOnTop(false);
         guideList.setVerticalScrollBarEnabled(false);
         guideList.setAdapter(new ChannelGuideAdapter());
@@ -591,7 +591,6 @@ public final class PlayerActivity extends Activity {
                 mid.addView(pl, Ui.margins(Ui.lp(Ui.dp(PlayerActivity.this, 160), Ui.dp(PlayerActivity.this, 3)), 0, Ui.dp(PlayerActivity.this, 6), 0, 0));
                 row.addView(mid, Ui.lpWeight(0, -2, 1));
             }
-            boolean focused = i == selected && guideList.hasFocus();
             boolean playing = i == index;
             TextView num = (TextView) row.getChildAt(0);
             LinearLayout mid = (LinearLayout) row.getChildAt(1);
@@ -605,10 +604,10 @@ public final class PlayerActivity extends Activity {
             show.setText(a != null ? a.title : "—");
             pl.setProgress(a != null ? a.progress(now) : 0);
             pl.setVisibility(a != null ? View.VISIBLE : View.INVISIBLE);
-            // Dark text on the white highlight, light text elsewhere; the playing channel's name in red.
-            num.setTextColor(focused ? 0xFF000000 : Ui.TEXT);
-            show.setTextColor(focused ? 0xFF000000 : Ui.TEXT);
-            name.setTextColor(playing ? Ui.LIVE_RED : focused ? 0xFF3A3A3C : Ui.SUB);
+            // The highlight is an outline, so text keeps its colors; the playing channel's name is red.
+            num.setTextColor(Ui.TEXT);
+            show.setTextColor(Ui.TEXT);
+            name.setTextColor(playing ? Ui.LIVE_RED : Ui.SUB);
             return row;
         }
     }
