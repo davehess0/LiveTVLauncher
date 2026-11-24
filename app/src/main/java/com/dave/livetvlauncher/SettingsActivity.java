@@ -86,7 +86,7 @@ public final class SettingsActivity extends Activity {
                 prefs.setStartOnLastChannel(!prefs.startOnLastChannel());
                 render();
             });
-            row("Subtitles / captions", prefs.subtitles() ? "On (menu or CC button toggles them while watching)" : "Off", v -> {
+            row("Subtitles / captions", prefs.subtitles() ? "On (hold OK while watching to turn on / off)" : "Off", v -> {
                 prefs.setSubtitles(!prefs.subtitles());
                 render();
             });

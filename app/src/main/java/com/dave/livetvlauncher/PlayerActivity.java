@@ -567,6 +567,13 @@ public final class PlayerActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        // CC button (on remotes that have one): subtitles on or off. (Android TV keeps the menu key to
+        // itself, so on the Shield remote it's hold OK instead.)
+        int k = e.getKeyCode();
+        if (k == KeyEvent.KEYCODE_CAPTIONS) {
+            if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) toggleSubtitles();
+            return true;
+        }
         if (guideShowing()) {
             bumpGuideTimer();
             if (e.getKeyCode() == KeyEvent.KEYCODE_BACK) {
@@ -631,7 +638,9 @@ public final class PlayerActivity extends Activity {
     @Override protected void onStart() {
         super.onStart();
         if (nums == null) return;
-        player = new ExoPlayer.Builder(this).build();
+        player = new ExoPlayer.Builder(this)
+                .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(this, extractors()))
+                .build();
         player.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException e) {
                 if (vlc != null) return; // VLC has taken over
@@ -814,7 +823,19 @@ public final class PlayerActivity extends Activity {
         }
     }
 
-    /** Menu / CC button (or the CC touch button): subtitles on or off, remembered for next time. */
+    /**
+     * Stream readers that always look for US broadcast captions (CEA-608 / 708) in TV streams. By
+     * default they only look when the stream's header announces captions, and HDHomeRun streams don't.
+     */
+    private static androidx.media3.extractor.DefaultExtractorsFactory extractors() {
+        return new androidx.media3.extractor.DefaultExtractorsFactory().setTsSubtitleFormats(java.util.Arrays.asList(
+                new androidx.media3.common.Format.Builder().setSampleMimeType(androidx.media3.common.MimeTypes.APPLICATION_CEA608)
+                        .setAccessibilityChannel(1).build(),
+                new androidx.media3.common.Format.Builder().setSampleMimeType(androidx.media3.common.MimeTypes.APPLICATION_CEA708)
+                        .setAccessibilityChannel(1).build()));
+    }
+
+    /** Hold OK, a CC button, or the CC touch button: subtitles on or off, remembered for next time. */
     private void toggleSubtitles() {
         subsOn = !subsOn;
         prefs.setSubtitles(subsOn);
@@ -951,7 +972,7 @@ public final class PlayerActivity extends Activity {
             }
             return;
         }
-        player.setMediaSource(new ProgressiveMediaSource.Factory(timeshift.sourceFrom(offset))
+        player.setMediaSource(new ProgressiveMediaSource.Factory(timeshift.sourceFrom(offset), extractors())
                 .createMediaSource(MediaItem.fromUri(urls[index])));
         player.prepare();
     }
@@ -1090,7 +1111,19 @@ public final class PlayerActivity extends Activity {
         handler.postDelayed(() -> entry.setVisibility(View.GONE), 1200);
     }
 
+    /** OK is acted on when released: a short press pauses / plays, holding it toggles subtitles. */
+    private boolean okTracking, okHeld;
+
+    private static boolean isOk(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER;
+    }
+
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // (Not while typing a channel number, where OK tunes, or when a Plex file failed, where OK opens Plex.)
+        if (isOk(keyCode) && (plexMode ? !plexFailed : typed.length() == 0)) {
+            if (event.getRepeatCount() == 0) { event.startTracking(); okTracking = true; okHeld = false; }
+            return true;
+        }
         if (plexMode) return onPlexKey(keyCode) || super.onKeyDown(keyCode, event);
         if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
             if (typed.length() < 5) typed.append((char) ('0' + keyCode - KeyEvent.KEYCODE_0));
@@ -1162,6 +1195,11 @@ public final class PlayerActivity extends Activity {
     }
 
     @Override public boolean onKeyLongPress(int keyCode, KeyEvent event) {
+        if (isOk(keyCode) && okTracking) {
+            okHeld = true;
+            toggleSubtitles();
+            return true;
+        }
         if (!plexMode && keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
             leftHeld = true;
             lastChannel();
@@ -1171,6 +1209,15 @@ public final class PlayerActivity extends Activity {
     }
 
     @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (isOk(keyCode) && okTracking) {
+            okTracking = false;
+            if (!okHeld && !event.isCanceled()) {
+                if (plexMode) onPlexKey(KeyEvent.KEYCODE_DPAD_CENTER);
+                else togglePause();
+            }
+            okHeld = false;
+            return true;
+        }
         if (!plexMode && keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
             if (!leftHeld && !event.isCanceled()) seekBy(-10_000);
             leftHeld = false;

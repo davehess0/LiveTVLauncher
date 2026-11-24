@@ -281,7 +281,8 @@ public final class GuideLayout extends HomeLayout {
         synScroll = new ScrollView(c) {
             @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
                 super.onSizeChanged(w, h, ow, oh);
-                int room = h - heroSynopsis.getPaddingTop();
+                // Only whole lines: a little slack so a line never peeks out half-cut at the bottom.
+                int room = h - heroSynopsis.getPaddingTop() - dp(6);
                 fitLines = Math.max(0, room / Math.max(1, heroSynopsis.getLineHeight()));
                 post(() -> expandSynopsis(heroExpanded));
             }
@@ -310,6 +311,8 @@ public final class GuideLayout extends HomeLayout {
         hero.setClickable(true);
         hero.setOnClickListener(v -> { if (heroCh != null) host.play(heroCh); });
         hero.setOnFocusChangeListener((v, has) -> {
+            // Selected: fold the video window away so the whole description (and the keys hint) has room.
+            previewBox.setVisibility(has ? View.GONE : View.VISIBLE);
             expandSynopsis(has);
             heroHint.setVisibility(has ? View.VISIBLE : View.GONE);
             Ui.lift(v, has, 1f);
