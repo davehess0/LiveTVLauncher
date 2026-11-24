@@ -47,16 +47,15 @@ public final class SimpleLayout extends HomeLayout {
         LinearLayout tiles = new LinearLayout(c);
         tiles.setClipChildren(false);
         tiles.setPadding(0, dp(32), 0, 0);
-        // Five tiles (with Cameras) need smaller titles so "Plex Live TV" etc. fit without "…".
-        float ts = host.hasCameras() ? 19 : 28;
+        // Watch TV is the main thing here, so it's twice as wide as the others. With Cameras there are
+        // four tiles, which need slightly smaller titles to fit without "…".
+        float ts = host.hasCameras() ? 24 : 28;
         watch = sourceTile("Watch TV", "Last channel", Ui.LIVE_RED, "●", ts, v -> host.resumeLastChannel());
-        tiles.addView(watch, tileLp(false));
-        tiles.addView(sourceTile("TV Guide", "What's on now", Ui.ACCENT, "☰", ts, v -> host.showGuide()), tileLp(false));
-        tiles.addView(sourceTile("Plex Live TV", "Plex channels", Ui.PLEX, "▶", ts,
-                v -> Apps.launch(host, Apps.PLEX)), tileLp(false));
+        tiles.addView(watch, tileLp(2, false));
+        tiles.addView(sourceTile("TV Guide", "What's on now", Ui.ACCENT, "☰", ts, v -> host.showGuide()), tileLp(1, false));
         if (host.hasCameras()) tiles.addView(sourceTile("Cameras", "Live view", Ui.LIVE_RED, "◉", ts,
-                v -> host.openCameras()), tileLp(false));
-        tiles.addView(sourceTile("Apps", "Everything else", Ui.SUB, "▦", ts, v -> host.openApps()), tileLp(true));
+                v -> host.openCameras()), tileLp(1, false));
+        tiles.addView(sourceTile("Apps", "Everything else", Ui.SUB, "▦", ts, v -> host.openApps()), tileLp(1, true));
         root.addView(tiles, Ui.lp(-1, -2));
 
         LinearLayout lower = new LinearLayout(c);
@@ -100,8 +99,8 @@ public final class SimpleLayout extends HomeLayout {
         }
     }
 
-    private LinearLayout.LayoutParams tileLp(boolean last) {
-        return Ui.margins(Ui.lpWeight(0, dp(200), 1), 0, 0, last ? 0 : dp(24), 0);
+    private LinearLayout.LayoutParams tileLp(float weight, boolean last) {
+        return Ui.margins(Ui.lpWeight(0, dp(200), weight), 0, 0, last ? 0 : dp(24), 0);
     }
 
     @Override public void bind(List<Channel> channels, String st) {

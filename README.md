@@ -11,7 +11,7 @@ your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zi
 |---|---|---|---|
 | **A** | **Guide** (default) | Streaming apps across the top. Below them, your channels on the left showing what's on now with a progress bar, and a preview of the selected channel on the right (show, time left, description, up next). | Channel surfers |
 | **B** | **Channel Wall** | Big tiles across the top: Resume, HDHomeRun, Plex Live TV. Below them: your Streaming apps, Plex Continue watching and Recently added movies, a wall of channel cards showing what's on now, then all apps. | Everyday mixed use |
-| **C** | **Simple** | A large clock and four huge tiles: Watch TV, TV Guide, Plex Live TV, Apps. | The restricted profile: anyone can get to TV in one press |
+| **C** | **Simple** | A large clock and huge tiles: a double-width Watch TV, then TV Guide and Apps (plus Cameras if you've added any). Plex is still in the Streaming row. | The restricted profile: anyone can get to TV in one press |
 
 ## Look and feel
 
