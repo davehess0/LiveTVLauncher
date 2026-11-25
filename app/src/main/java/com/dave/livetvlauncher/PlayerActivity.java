@@ -620,16 +620,20 @@ public final class PlayerActivity extends Activity {
             TextView name = (TextView) mid.getChildAt(0), show = (TextView) mid.getChildAt(1);
             Ui.ProgressLine pl = (Ui.ProgressLine) mid.getChildAt(2);
             num.setText(nums[i]);
-            name.setText((playing ? "● " : "") + names[i]);
             Channel ch = ChannelStore.get().byNumber(nums[i]);
             long now = System.currentTimeMillis() / 1000L;
             Channel.Airing a = ch != null ? ch.now(now) : null;
-            show.setText(a != null ? a.title : "—");
+            // With a guide: small channel name, then the show. Without one: just the channel's
+            // name (no dash), with the playing marker in front of it.
+            String dot = playing ? "● " : "";
+            name.setText(dot + names[i]);
+            name.setVisibility(a != null ? View.VISIBLE : View.GONE);
+            show.setText(a != null ? a.title : dot + names[i]);
             pl.setProgress(a != null ? a.progress(now) : 0);
-            pl.setVisibility(a != null ? View.VISIBLE : View.INVISIBLE);
+            pl.setVisibility(a != null ? View.VISIBLE : View.GONE);
             // The highlight is an outline, so text keeps its colors; the playing channel's name is red.
             num.setTextColor(Ui.TEXT);
-            show.setTextColor(Ui.TEXT);
+            show.setTextColor(a == null && playing ? Ui.LIVE_RED : Ui.TEXT);
             name.setTextColor(playing ? Ui.LIVE_RED : Ui.SUB);
             return row;
         }
@@ -1065,12 +1069,13 @@ public final class PlayerActivity extends Activity {
     private void showBanner() {
         boolean paused = (player != null || vlc != null) && !wantPlay();
         long behind = behindLiveMs();
-        bannerChannel.setText(nums[index] + "  ·  " + names[index] + "      "
-                + (paused ? "❚❚ PAUSED  ·  " : "")
-                + (behind > 0 ? fmt(behind) + " behind live" : "● LIVE"));
         Channel ch = ChannelStore.get().byNumber(nums[index]);
         long now = streamTimeMs() / 1000L; // what's on screen, which may be from a few minutes ago
         Channel.Airing a = ch != null ? ch.now(now) : null;
+        // Without a guide the channel's name is the big title, so the top line doesn't repeat it.
+        bannerChannel.setText(nums[index] + (a != null ? "  ·  " + names[index] : "") + "      "
+                + (paused ? "❚❚ PAUSED  ·  " : "")
+                + (behind > 0 ? fmt(behind) + " behind live" : "● LIVE"));
         Channel.Airing n = ch != null ? ch.next(now) : null;
         boolean h24 = prefs.clock24h();
         if (a != null) {
