@@ -251,6 +251,7 @@ public final class PlayerActivity extends Activity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        startMode = display().getMode();
         prefs = new Prefs(this);
         subsOn = prefs.subtitles();
         Intent in = getIntent();
@@ -800,8 +801,12 @@ public final class PlayerActivity extends Activity {
                 logVideoFormat(tracks);
                 logAvCapabilities(tracks);
                 for (Tracks.Group g : tracks.getGroups())
-                    if (g.getType() == C.TRACK_TYPE_VIDEO && g.length > 0)
-                        playingDv = androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(g.getTrackFormat(0).sampleMimeType);
+                    if (g.getType() == C.TRACK_TYPE_VIDEO && g.length > 0) {
+                        androidx.media3.common.Format vf = g.getTrackFormat(0);
+                        playingDv = androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(vf.sampleMimeType);
+                        if (playingDv || (vf.colorInfo != null && (vf.colorInfo.colorTransfer == C.COLOR_TRANSFER_ST2084
+                                || vf.colorInfo.colorTransfer == C.COLOR_TRANSFER_HLG))) playedHdr = true;
+                    }
                 if (tracks.isEmpty()) return;
                 // A video or audio track this device has no decoder for: hand over to VLC
                 // (otherwise the picture stays black, or the sound is missing).
@@ -1132,6 +1137,12 @@ public final class PlayerActivity extends Activity {
             reportPlex("stopped");
             if (player != null || vlc != null) plexStartMs = posMs() + 5000; // resume here if reopened
         }
+        releasePlayback();
+        stopWaitingForDisplay();
+        super.onStop();
+    }
+
+    private void releasePlayback() {
         releaseVlc();
         if (player != null) {
             view.setPlayer(null);
@@ -1139,7 +1150,79 @@ public final class PlayerActivity extends Activity {
             player = null;
         }
         if (timeshift != null) { timeshift.stop(); timeshift = null; } // releases the tuner, deletes the buffer
-        super.onStop();
+    }
+
+    // ---- Leaving without a flash of the home screen ----
+    // With the Shield's "Match content frame rate" / "Match content dynamic range" on, the TV's
+    // signal changes while a video plays (e.g. 23.976 Hz, or HDR / Dolby Vision). When the video
+    // stops, the Shield switches back and the TV goes black for a moment while it resyncs. If the
+    // home screen is drawn first, it shows, goes black, then comes back. So on leaving: stop the
+    // video behind a black screen, wait for the switch back, and only then show the home screen.
+
+    /** The display mode when the player opened (before any frame-rate switch). */
+    private android.view.Display.Mode startMode;
+    /** The video played was HDR or Dolby Vision (the TV resyncs when it ends, even at the same frame rate). */
+    private boolean playedHdr;
+    private boolean exiting;
+    private android.hardware.display.DisplayManager.DisplayListener displayWait;
+    private static final long WAIT_MODE_MS = 3000, WAIT_HDR_MS = 1500, SETTLE_MS = 150;
+
+    @SuppressWarnings("deprecation")
+    private android.view.Display display() { return getWindowManager().getDefaultDisplay(); }
+
+    @Override public void finish() {
+        if (exiting) { super.finish(); return; }
+        exiting = true;
+        android.view.Display.Mode now = display().getMode();
+        boolean modeChanged = startMode != null && now.getModeId() != startMode.getModeId();
+        if (!modeChanged && !playedHdr) { super.finish(); return; }
+
+        // Black screen, then stop the video (this is what makes the Shield switch back).
+        View black = new View(this);
+        black.setBackgroundColor(0xFF000000);
+        root.addView(black, new FrameLayout.LayoutParams(-1, -1));
+        reportPlex("stopped");
+        releasePlayback();
+        view.setVisibility(View.GONE); // drop the video surface too
+
+        final long started = System.currentTimeMillis();
+        final String why = modeChanged
+                ? "display " + describe(now) + " → back to " + describe(startMode)
+                : "HDR / Dolby Vision ended";
+        android.hardware.display.DisplayManager dm = getSystemService(android.hardware.display.DisplayManager.class);
+        Runnable done = () -> {
+            if (isFinishing() || isDestroyed()) return;
+            stopWaitingForDisplay();
+            AppLog.i("Player", "Leaving after " + (System.currentTimeMillis() - started) + " ms (" + why + ")");
+            super.finish();
+            overridePendingTransition(0, 0);
+        };
+        displayWait = new android.hardware.display.DisplayManager.DisplayListener() {
+            @Override public void onDisplayAdded(int id) { }
+            @Override public void onDisplayRemoved(int id) { }
+            @Override public void onDisplayChanged(int id) {
+                android.view.Display.Mode m = display().getMode();
+                AppLog.i("Player", "Display changed after " + (System.currentTimeMillis() - started) + " ms · " + describe(m));
+                // Switched back (or, for HDR at the same rate, any change): give it a moment, then leave.
+                if (!modeChanged || m.getModeId() == startMode.getModeId()) {
+                    handler.removeCallbacks(done);
+                    handler.postDelayed(done, SETTLE_MS);
+                }
+            }
+        };
+        dm.registerDisplayListener(displayWait, handler);
+        handler.postDelayed(done, modeChanged ? WAIT_MODE_MS : WAIT_HDR_MS); // in case nothing is reported
+    }
+
+    private void stopWaitingForDisplay() {
+        if (displayWait == null) return;
+        getSystemService(android.hardware.display.DisplayManager.class).unregisterDisplayListener(displayWait);
+        displayWait = null;
+    }
+
+    private static String describe(android.view.Display.Mode m) {
+        return m.getPhysicalWidth() + "x" + m.getPhysicalHeight() + " @ "
+                + String.format(java.util.Locale.US, "%.3f", m.getRefreshRate()) + " Hz";
     }
 
     private void retryOrFail(String reason) {

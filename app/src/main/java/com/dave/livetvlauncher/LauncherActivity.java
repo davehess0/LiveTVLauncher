@@ -246,9 +246,29 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         }
     }
 
+    // Logs display mode changes while the home screen is showing (e.g. the Shield's frame-rate
+    // matching switching the TV's signal for the Guide's live preview). Diagnostics only.
+    private android.hardware.display.DisplayManager.DisplayListener displayLog;
+    private void watchDisplay(boolean on) {
+        android.hardware.display.DisplayManager dm = getSystemService(android.hardware.display.DisplayManager.class);
+        if (displayLog != null) { dm.unregisterDisplayListener(displayLog); displayLog = null; }
+        if (!on) return;
+        displayLog = new android.hardware.display.DisplayManager.DisplayListener() {
+            @Override public void onDisplayAdded(int id) { }
+            @Override public void onDisplayRemoved(int id) { }
+            @Override public void onDisplayChanged(int id) {
+                @SuppressWarnings("deprecation") android.view.Display.Mode m = getWindowManager().getDefaultDisplay().getMode();
+                AppLog.i("App", "Home: display changed · " + m.getPhysicalWidth() + "x" + m.getPhysicalHeight() + " @ "
+                        + String.format(java.util.Locale.US, "%.3f", m.getRefreshRate()) + " Hz");
+            }
+        };
+        dm.registerDisplayListener(displayLog, handler);
+    }
+
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        watchDisplay(true);
         UpdateUi.checkQuietly(this); // a new GitHub release? (at most every few hours; silent if none)
         if (!lookApplied.equals(Ui.theme())) applyLook(); // the look was changed in Settings
         maybeStartOnLastChannel(); // channels may already be loaded
@@ -275,6 +295,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
 
     @Override protected void onPause() {
         resumed = false;
+        watchDisplay(false);
         if (current != null) current.onHidden();
         handler.removeCallbacks(ticker);
         super.onPause();
