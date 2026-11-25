@@ -327,7 +327,7 @@ public final class GuideLayout extends HomeLayout {
         heroNext.setPadding(0, dp(10), 0, dp(4));
         hero.addView(heroNext);
         heroHint = Ui.text(c, 12, Ui.ACCENT, true);
-        heroHint.setText("OK to watch  ·  ▲ ▼ read more  ·  ◀ back to the list");
+        heroHint.setText("OK to watch  ·  ▼ read more  ·  ◀ back to the list");
         heroHint.setPadding(0, dp(6), 0, 0);
         heroHint.setVisibility(View.GONE);
         hero.addView(heroHint);
@@ -348,12 +348,15 @@ public final class GuideLayout extends HomeLayout {
             Ui.lift(v, has, 1f);
         });
         hero.setOnKeyListener((v, keyCode, e) -> {
-            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP || keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+            boolean up = keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP;
+            if (up || keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                // Up / Down scroll the description; Up at its top moves on to the streaming apps above.
+                if (up && !synScroll.canScrollVertically(-1)) return false;
                 if (e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
                     int step = heroSynopsis.getLineHeight() * 3;
-                    synScroll.smoothScrollBy(0, keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ? -step : step);
+                    synScroll.smoothScrollBy(0, up ? -step : step);
                 }
-                return true; // stay in the panel
+                return true;
             }
             if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT && e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
                 for (Row r : rows) if (r.ch == heroCh) { r.view.requestFocus(); return true; }
@@ -509,8 +512,9 @@ public final class GuideLayout extends HomeLayout {
         boolean h24 = prefs.clock24h();
         Channel.Airing a = ch.now(now);
         Channel.Airing n = ch.next(now);
-        heroChannel.setText(ch.number + "  ·  " + ch.displayName());
         String info = streamInfo.get(ch);
+        // Without a guide the name is the big title below, so this line is just the number.
+        heroChannel.setText(ch.now(now()) != null ? ch.number + "  ·  " + ch.displayName() : ch.number);
         if (a != null) {
             heroTitle.setText(a.title);
             String ep = a.episodeTitle.isEmpty() ? "" : "  ·  " + (a.episodeNumber.isEmpty() ? "" : a.episodeNumber + " ") + a.episodeTitle;
