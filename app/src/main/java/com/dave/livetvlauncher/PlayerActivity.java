@@ -734,9 +734,33 @@ public final class PlayerActivity extends Activity {
     @Override protected void onStart() {
         super.onStart();
         if (nums == null) return;
-        player = new ExoPlayer.Builder(this)
+        player = new ExoPlayer.Builder(this, renderers())
                 .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(this, extractors()))
                 .build();
+        // Which decoder actually plays the video (shows whether Dolby Vision or its HDR10 base layer is used).
+        player.addAnalyticsListener(new androidx.media3.exoplayer.analytics.AnalyticsListener() {
+            @Override public void onVideoDecoderInitialized(EventTime t, String name, long initializedMs, long durationMs) {
+                AppLog.i("Player", "Video decoder: " + name + (playingDv
+                        ? (name.toLowerCase(java.util.Locale.US).contains("dovi") || name.toLowerCase(java.util.Locale.US).contains("dolby")
+                           ? " (Dolby Vision)" : " (HDR10 base layer)") : ""));
+            }
+            @Override public void onAudioDecoderInitialized(EventTime t, String name, long initializedMs, long durationMs) {
+                AppLog.i("Player", "Audio decoder: " + name + " (decoding to PCM)");
+            }
+            @Override public void onAudioTrackInitialized(EventTime t, androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig c) {
+                String enc;
+                switch (c.encoding) {
+                    case android.media.AudioFormat.ENCODING_DOLBY_TRUEHD: enc = "TrueHD bitstream (Atmos if the track has it)"; break;
+                    case android.media.AudioFormat.ENCODING_E_AC3_JOC: enc = "E-AC3 Atmos bitstream"; break;
+                    case android.media.AudioFormat.ENCODING_E_AC3: enc = "E-AC3 bitstream"; break;
+                    case android.media.AudioFormat.ENCODING_AC3: enc = "AC3 bitstream"; break;
+                    case android.media.AudioFormat.ENCODING_DTS: enc = "DTS bitstream"; break;
+                    case android.media.AudioFormat.ENCODING_DTS_HD: enc = "DTS-HD bitstream"; break;
+                    default: enc = "PCM (decoded)";
+                }
+                AppLog.i("Player", "Audio output: " + enc + " · " + c.sampleRate + " Hz");
+            }
+        });
         player.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException e) {
                 if (vlc != null) return; // VLC has taken over
@@ -744,6 +768,16 @@ public final class PlayerActivity extends Activity {
                         + "error " + e.getErrorCodeName(), e.getCause() != null ? e.getCause() : e);
                 boolean decoderProblem = e.errorCode >= 4000 && e.errorCode < 6000; // decoding / audio output
                 if (plexMode) {
+                    // Dolby Vision decoder failed: retry with the HDR10 base layer, still in ExoPlayer
+                    // (keeps Atmos), before giving up to VLC.
+                    if (decoderProblem && playingDv && !dvBaseLayerOnly) {
+                        dvBaseLayerOnly = true;
+                        AppLog.w("Player", "Dolby Vision decoder failed (" + e.getErrorCodeName()
+                                + ") · retrying with the HDR10 base layer");
+                        player.seekTo(Math.max(0, player.getCurrentPosition()));
+                        player.prepare();
+                        return;
+                    }
                     // Video or audio this device can't handle: VLC has its own decoders.
                     if (decoderProblem) { switchPlexToVlc(e.getErrorCodeName()); return; }
                     plexFailed = true;
@@ -765,6 +799,9 @@ public final class PlayerActivity extends Activity {
                 if (vlc != null) return;
                 logVideoFormat(tracks);
                 logAvCapabilities(tracks);
+                for (Tracks.Group g : tracks.getGroups())
+                    if (g.getType() == C.TRACK_TYPE_VIDEO && g.length > 0)
+                        playingDv = androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(g.getTrackFormat(0).sampleMimeType);
                 if (tracks.isEmpty()) return;
                 // A video or audio track this device has no decoder for: hand over to VLC
                 // (otherwise the picture stays black, or the sound is missing).
@@ -932,6 +969,93 @@ public final class PlayerActivity extends Activity {
                         .setAccessibilityChannel(1).build()));
     }
 
+    // ---- Dolby Vision ----
+    // Stock ExoPlayer only knows decoders for single-layer Dolby Vision (profiles 5 / 8 / 9). For a
+    // dual-layer UHD Blu-ray remux (profile 7, "dvhe.07") it finds no decoder, so the whole title used
+    // to go to VLC, which also decoded the TrueHD / E-AC3 Atmos to plain PCM. Instead:
+    //  1. Try the Shield's own Dolby Vision decoder (what the Plex app uses), even if it doesn't list
+    //     the exact profile.
+    //  2. If that decoder won't start, or errors, play the HEVC base layer (HDR10) in ExoPlayer.
+    //  3. VLC only as a last resort.
+    // Steps 1-2 stay in ExoPlayer, so Atmos keeps bitstreaming to the receiver either way.
+
+    /** After the Dolby Vision decoder failed on this title: base layer (HDR10) only. */
+    private boolean dvBaseLayerOnly;
+    /** The playing title's video is Dolby Vision (set when its tracks are known). */
+    private boolean playingDv;
+
+    /** Decoders for a MIME type; Dolby Vision also gets the HEVC decoders, for its base layer. */
+    private static final androidx.media3.exoplayer.mediacodec.MediaCodecSelector DV_SELECTOR = (mime, secure, tunneling) -> {
+        List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> l =
+                androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(mime, secure, tunneling);
+        if (!androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(mime)) return l;
+        List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> out = new java.util.ArrayList<>(l);
+        out.addAll(androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(
+                androidx.media3.common.MimeTypes.VIDEO_H265, secure, tunneling));
+        return out;
+    };
+
+    private androidx.media3.exoplayer.DefaultRenderersFactory renderers() {
+        return new androidx.media3.exoplayer.DefaultRenderersFactory(this) {
+            @Override protected void buildVideoRenderers(Context context, int extensionRendererMode,
+                    androidx.media3.exoplayer.mediacodec.MediaCodecSelector selector, boolean enableDecoderFallback,
+                    Handler eventHandler, androidx.media3.exoplayer.video.VideoRendererEventListener eventListener,
+                    long allowedVideoJoiningTimeMs, java.util.ArrayList<androidx.media3.exoplayer.Renderer> out) {
+                out.add(new DvVideoRenderer(context, selector, allowedVideoJoiningTimeMs, enableDecoderFallback,
+                        eventHandler, eventListener));
+            }
+        }.setMediaCodecSelector(DV_SELECTOR).setEnableDecoderFallback(true);
+    }
+
+    /** The regular video renderer, except that Dolby Vision tries the real DV decoder before HEVC. */
+    private final class DvVideoRenderer extends androidx.media3.exoplayer.video.MediaCodecVideoRenderer {
+        DvVideoRenderer(Context c, androidx.media3.exoplayer.mediacodec.MediaCodecSelector s, long joining,
+                        boolean fallback, Handler h, androidx.media3.exoplayer.video.VideoRendererEventListener l) {
+            super(c, s, joining, fallback, h, l, 50);
+        }
+
+        @Override protected List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> getDecoderInfos(
+                androidx.media3.exoplayer.mediacodec.MediaCodecSelector s, androidx.media3.common.Format format,
+                boolean secure) throws androidx.media3.exoplayer.mediacodec.MediaCodecUtil.DecoderQueryException {
+            List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> sorted = super.getDecoderInfos(s, format, secure);
+            if (!androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)) return sorted;
+            // ExoPlayer puts decoders that list the exact profile first, which for profile 7 means
+            // HEVC (base layer only). Put the Dolby Vision decoders first instead.
+            List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> dv = new java.util.ArrayList<>(), base = new java.util.ArrayList<>();
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo i : sorted) {
+                if (!seen.add(i.name + "|" + i.mimeType)) continue;
+                (androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(i.mimeType) ? dv : base).add(i);
+            }
+            if (dvBaseLayerOnly && !base.isEmpty()) return base;
+            dv.addAll(base);
+            return dv;
+        }
+
+        @Override protected android.media.MediaFormat getMediaFormat(androidx.media3.common.Format format,
+                String codecMimeType, CodecMaxValues max, float rate, boolean noPostProcess, int tunnelingSession) {
+            android.media.MediaFormat mf = super.getMediaFormat(format, codecMimeType, max, rate, noPostProcess, tunnelingSession);
+            // Base layer on an HEVC decoder: ask for HEVC Main 10, not the Dolby Vision profile number.
+            if (androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(format.sampleMimeType)
+                    && androidx.media3.common.MimeTypes.VIDEO_H265.equals(codecMimeType))
+                mf.setInteger(android.media.MediaFormat.KEY_PROFILE,
+                        android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10);
+            return mf;
+        }
+    }
+
+    /** "P5 P8" etc.: the Dolby Vision profiles a decoder says it handles. */
+    private static String dvProfiles(androidx.media3.exoplayer.mediacodec.MediaCodecInfo info) {
+        int[] bits = {0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200, 0x400};
+        String[] names = {"P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10"};
+        java.util.TreeSet<Integer> have = new java.util.TreeSet<>();
+        for (android.media.MediaCodecInfo.CodecProfileLevel pl : info.getProfileLevels())
+            for (int i = 0; i < bits.length; i++) if (pl.profile == bits[i]) have.add(i);
+        StringBuilder sb = new StringBuilder();
+        for (int i : have) sb.append(sb.length() > 0 ? " " : "").append(names[i]);
+        return sb.length() > 0 ? sb.toString() : "none listed";
+    }
+
     /** Hold OK, a CC button, or the CC touch button: subtitles on or off, remembered for next time. */
     private void toggleSubtitles() {
         subsOn = !subsOn;
@@ -1055,10 +1179,20 @@ public final class PlayerActivity extends Activity {
             androidx.media3.common.Format f = g.getTrackFormat(0);
             boolean dv = androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(f.sampleMimeType)
                     || (f.codecs != null && (f.codecs.startsWith("dvh") || f.codecs.startsWith("dva") || f.codecs.startsWith("dav")));
-            if (dv) AppLog.i("Player", what + " is Dolby Vision (codecs " + f.codecs + ") · "
-                    + (g.isTrackSupported(0) ? "ExoPlayer will play it (single-layer DV, or the HDR10 base layer "
-                    + "for dual-layer profile 7 — the Plex app handles profile 7 via the Shield's own player)"
-                    : "ExoPlayer can't decode this profile"));
+            if (dv) {
+                AppLog.i("Player", what + " is Dolby Vision (codecs " + f.codecs + ") · "
+                        + (g.isTrackSupported(0) ? "playing in ExoPlayer (Dolby Vision decoder first, HDR10 base layer as backup)"
+                        : "no decoder at all"));
+                try {
+                    List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> ds = androidx.media3.exoplayer.mediacodec.MediaCodecUtil
+                            .getDecoderInfos(androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION, false, false);
+                    if (ds.isEmpty()) AppLog.i("Player", "Dolby Vision decoders on this device: none");
+                    for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo d : ds)
+                        AppLog.i("Player", "Dolby Vision decoder " + d.name + " · profiles " + dvProfiles(d));
+                } catch (Exception e) {
+                    AppLog.w("Player", "Couldn't list Dolby Vision decoders (" + e.getClass().getSimpleName() + ")");
+                }
+            }
             break;
         }
     }
