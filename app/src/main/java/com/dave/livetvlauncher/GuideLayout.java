@@ -242,7 +242,8 @@ public final class GuideLayout extends HomeLayout {
         previewBox.setBackground(Ui.rounded(0xFF000000, dp(14), 0, 0));
         previewBox.setClipToOutline(true);
         heroLogoSlot = new LinearLayout(c);
-        previewBox.addView(heroLogoSlot, new android.widget.FrameLayout.LayoutParams(dp(150), dp(88), Gravity.CENTER));
+        // Same size as the logo plate put in it (showHero), or the plate's bottom gets cut off.
+        previewBox.addView(heroLogoSlot, new android.widget.FrameLayout.LayoutParams(dp(150), dp(92), Gravity.CENTER));
         previewView = new androidx.media3.ui.PlayerView(c);
         previewView.setUseController(false);
         previewView.setShutterBackgroundColor(0xFF000000);
