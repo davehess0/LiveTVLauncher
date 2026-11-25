@@ -37,6 +37,8 @@ import java.util.List;
 public final class CamerasActivity extends Activity {
     private static final int GRID_MAX = 4;
     private static final long RECONNECT_MS = 5000;
+    /** Grid cameras start this far apart, so a HomeBase isn't asked for several logins at once. */
+    private static final long STAGGER_MS = 1500;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private List<String[]> cams;
@@ -99,7 +101,7 @@ public final class CamerasActivity extends Activity {
             for (int c = 0; c < 2; c++) {
                 int i = r * 2 + c;
                 if (i >= n) { row.addView(new View(this), Ui.lpWeight(0, -1, 1)); continue; }
-                Tile t = makeTile(i, false);
+                Tile t = makeTile(i, false, i * STAGGER_MS);
                 LinearLayout.LayoutParams lp = Ui.lpWeight(0, -1, 1);
                 lp.setMargins(pad / 2, pad / 2, pad / 2, pad / 2);
                 row.addView(t.view, lp);
@@ -115,13 +117,13 @@ public final class CamerasActivity extends Activity {
         releaseAll();
         fullIndex = (i + cams.size()) % cams.size();
         root.removeAllViews();
-        Tile t = makeTile(fullIndex, true);
+        Tile t = makeTile(fullIndex, true, 0);
         root.addView(t.view, new FrameLayout.LayoutParams(-1, -1));
         t.view.requestFocus();
         AppLog.i("Cameras", "Full screen: " + cams.get(fullIndex)[0]);
     }
 
-    private Tile makeTile(int camIndex, boolean full) {
+    private Tile makeTile(int camIndex, boolean full, long startDelayMs) {
         Tile t = new Tile();
         t.cam = camIndex;
         t.view = new FrameLayout(this);
@@ -152,8 +154,9 @@ public final class CamerasActivity extends Activity {
         t.status.setSingleLine(false);
         t.status.setGravity(Gravity.CENTER);
         t.status.setVisibility(View.GONE);
-        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
         slp.topMargin = Ui.dp(this, 60);
+        slp.leftMargin = slp.rightMargin = Ui.dp(this, 32); // wrap neatly inside the tile
         t.view.addView(t.status, slp);
 
         t.spinner = new ProgressBar(this, null, android.R.attr.progressBarStyleLarge);
@@ -162,7 +165,8 @@ public final class CamerasActivity extends Activity {
         t.view.addView(t.spinner, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
 
         tiles.add(t);
-        start(t, full);
+        if (startDelayMs <= 0) start(t, full);
+        else handler.postDelayed(() -> { if (tiles.contains(t)) start(t, full); }, startDelayMs);
         return t;
     }
 
@@ -258,7 +262,8 @@ public final class CamerasActivity extends Activity {
                 return "The camera turned down the user name / password (" + status + ")."
                         + "\nRe-copy them from the camera's RTSP settings in the Eufy app.";
             case 404:
-                return "The camera doesn't have that stream (404). Check the path, e.g. /live0";
+                return "No stream right now (404). The camera may be asleep: open its live view in the Eufy app "
+                        + "to wake it. Each camera has its own RTSP address and login.";
             case 461:
                 return "The camera didn't accept that connection type (461); trying the other one";
             case 453:
@@ -286,6 +291,29 @@ public final class CamerasActivity extends Activity {
             default:
                 return "Camera stream problem (" + e.getErrorCodeName() + ")";
         }
+    }
+
+    /**
+     * Names of cameras that share one login on the same device (e.g. one HomeBase). Eufy gives each
+     * camera its own RTSP user name and password, so a shared one is almost always a copy-paste slip.
+     */
+    static List<String> sharedLogins(List<String[]> cams) {
+        java.util.Map<String, List<String>> byLogin = new java.util.LinkedHashMap<>();
+        for (String[] c : cams) {
+            try {
+                Uri u = Uri.parse(c[1].trim());
+                String info = u.getEncodedUserInfo();
+                if (info == null || info.isEmpty() || u.getHost() == null) continue;
+                String user = info.contains(":") ? info.substring(0, info.indexOf(':')) : info;
+                String k = u.getHost() + "|" + Uri.decode(user);
+                List<String> l = byLogin.get(k);
+                if (l == null) byLogin.put(k, l = new ArrayList<>());
+                l.add(c[0]);
+            } catch (Exception ignored) { }
+        }
+        List<String> out = new ArrayList<>();
+        for (List<String> l : byLogin.values()) if (l.size() > 1) out.addAll(l);
+        return out;
     }
 
     /**

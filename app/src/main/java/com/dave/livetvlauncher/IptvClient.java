@@ -116,7 +116,7 @@ final class IptvClient {
             r.channels.add(ch);
         }
 
-        r.guideUrl = guideSetting.isEmpty() ? headerGuide : guideSetting;
+        r.guideUrl = !guideSetting.isEmpty() ? guideSetting : !headerGuide.isEmpty() ? headerGuide : xtreamGuide(playlistUrl);
         if (!r.guideUrl.isEmpty() && !r.channels.isEmpty()) {
             try {
                 applyGuide(r.guideUrl, r.channels);
@@ -332,6 +332,27 @@ final class IptvClient {
             else if (ch == ',' && !quoted) return extinf.substring(i + 1).trim();
         }
         return "";
+    }
+
+    /**
+     * Xtream-style providers serve the playlist at .../get.php?username=U&password=P and the guide
+     * for it at .../xmltv.php?username=U&password=P. Returns that guide link, or "" for other links.
+     */
+    static String xtreamGuide(String playlistUrl) {
+        try {
+            String u = playlistUrl.trim();
+            if (!u.matches("(?i)^[a-z]+://.*")) u = "http://" + u;
+            android.net.Uri p = android.net.Uri.parse(u);
+            String path = p.getPath() == null ? "" : p.getPath();
+            if (!path.toLowerCase(Locale.US).endsWith("/get.php")) return "";
+            String user = p.getQueryParameter("username"), pass = p.getQueryParameter("password");
+            if (user == null || pass == null) return "";
+            return p.buildUpon().path(path.substring(0, path.length() - "get.php".length()) + "xmltv.php")
+                    .clearQuery().appendQueryParameter("username", user).appendQueryParameter("password", pass)
+                    .build().toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private static String key(String s) {

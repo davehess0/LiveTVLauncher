@@ -115,6 +115,7 @@ public final class SettingsActivity extends Activity {
         group("IPTV", prefs.iptvUrl().isEmpty() ? "Off" : iptvN + " channels · " + shortUrl(prefs.iptvUrl()), () -> {
             row("Playlist (M3U)", prefs.iptvUrl().isEmpty() ? "Off · click to add" : shortUrl(prefs.iptvUrl()), v -> askIptv(false));
             row("Guide (XMLTV)", !prefs.iptvGuideUrl().isEmpty() ? shortUrl(prefs.iptvGuideUrl())
+                    : !IptvClient.xtreamGuide(prefs.iptvUrl()).isEmpty() ? "Automatic (your provider's xmltv.php)"
                     : "From the playlist, if it names one", v -> askIptv(true));
             if (!prefs.iptvUrl().isEmpty()) {
                 int groups = ChannelStore.get().iptvGroups().size(), hidden = prefs.iptvHiddenGroups().size();
@@ -142,6 +143,15 @@ public final class SettingsActivity extends Activity {
                 row(cams.get(i)[0], AppLog.mask(cams.get(i)[1]), v -> askCamera(idx));
             }
             row("Add camera", "RTSP address from the Eufy app (or a go2rtc relay)", v -> askCamera(-1));
+            java.util.List<String> shared = CamerasActivity.sharedLogins(cams);
+            if (!shared.isEmpty()) row("⚠  Shared login", android.text.TextUtils.join(", ", shared) + " use the same one",
+                    v -> new AlertDialog.Builder(this)
+                            .setTitle("Cameras sharing one login")
+                            .setMessage(android.text.TextUtils.join(", ", shared) + " use the same user name on the same device.\n\n"
+                                    + "Eufy gives each camera its own RTSP user name and password. Open each camera in the "
+                                    + "Eufy app (Settings → Storage or NAS → RTSP stream), copy its own address, and paste it "
+                                    + "here or on the phone setup page.")
+                            .setPositiveButton("OK", null).show());
         });
 
         group("Weather", prefs.weatherLat().isEmpty() ? "Off" : prefs.weatherPlace()
@@ -372,6 +382,9 @@ public final class SettingsActivity extends Activity {
                     if (editing) list.set(index, new String[]{n, u}); else list.add(new String[]{n, u});
                     prefs.setCameras(list);
                     AppLog.i("Cameras", (editing ? "Edited " : "Added ") + n + " · " + u);
+                    if (CamerasActivity.sharedLogins(list).contains(n))
+                        Toast.makeText(this, n + " uses the same login as another camera. Each Eufy camera has its own; "
+                                + "check this one's RTSP address in the Eufy app.", Toast.LENGTH_LONG).show();
                     render();
                 })
                 .setNegativeButton("Cancel", null);
