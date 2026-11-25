@@ -185,6 +185,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        UpdateUi.checkQuietly(this); // a new GitHub release? (at most every few hours; silent if none)
         if (!lookApplied.equals(Ui.theme())) applyLook(); // the look was changed in Settings
         maybeStartOnLastChannel(); // channels may already be loaded
         if (!signature().equals(builtSignature)) rebuild();

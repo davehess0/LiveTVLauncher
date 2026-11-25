@@ -209,6 +209,16 @@ public final class Prefs {
     }
 
     /** GitHub token for checking a private repo's Releases (read-only). Empty = none. */
+    /** Look for a new release on GitHub when the launcher opens (and every few hours while it's open). */
+    public boolean autoUpdateCheck() { return sp.getBoolean("autoUpdateCheck", true); }
+    public void setAutoUpdateCheck(boolean v) { sp.edit().putBoolean("autoUpdateCheck", v).apply(); }
+    /** "Later" on an automatic update offer: that version isn't offered again until the time given. */
+    public String updateLaterVersion() { return sp.getString("updateLaterVersion", ""); }
+    public long updateLaterUntil() { return sp.getLong("updateLaterUntil", 0); }
+    public void setUpdateLater(String version, long until) {
+        sp.edit().putString("updateLaterVersion", version).putLong("updateLaterUntil", until).apply();
+    }
+
     public String githubToken() { return sp.getString("githubToken", ""); }
     public void setGithubToken(String v) { sp.edit().putString("githubToken", v == null ? "" : v.trim()).apply(); }
 
