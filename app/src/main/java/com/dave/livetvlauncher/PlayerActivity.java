@@ -1014,6 +1014,17 @@ public final class PlayerActivity extends Activity {
             super(c, s, joining, fallback, h, l, 50);
         }
 
+        /** Times the Dolby Vision decoder has been configured for this title (1st: as profile 7, then as 8.1). */
+        private int dvConfigAttempt;
+
+        // Profile 7: ExoPlayer refuses it outright (the Shield's DV decoder only lists P4/P5/P8/P9, and
+        // ExoPlayer won't let an HEVC decoder take a P7 base layer). The Shield's decoder plays P7 for
+        // Kodi and Plex anyway, so answer the "can you play this?" question as for profile 8.
+        @Override protected int supportsFormat(androidx.media3.exoplayer.mediacodec.MediaCodecSelector s,
+                androidx.media3.common.Format format) throws androidx.media3.exoplayer.mediacodec.MediaCodecUtil.DecoderQueryException {
+            return super.supportsFormat(s, isDvProfile7(format) ? asProfile8(format) : format);
+        }
+
         @Override protected List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> getDecoderInfos(
                 androidx.media3.exoplayer.mediacodec.MediaCodecSelector s, androidx.media3.common.Format format,
                 boolean secure) throws androidx.media3.exoplayer.mediacodec.MediaCodecUtil.DecoderQueryException {
@@ -1028,6 +1039,13 @@ public final class PlayerActivity extends Activity {
                 (androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(i.mimeType) ? dv : base).add(i);
             }
             if (dvBaseLayerOnly && !base.isEmpty()) return base;
+            dvConfigAttempt = 0;
+            // Profile 7: offer each DV decoder twice, first configured as profile 7, then as 8.1.
+            if (isDvProfile7(format)) {
+                List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> twice = new java.util.ArrayList<>();
+                for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo i : dv) { twice.add(i); twice.add(i); }
+                dv = twice;
+            }
             dv.addAll(base);
             return dv;
         }
@@ -1040,8 +1058,29 @@ public final class PlayerActivity extends Activity {
                     && androidx.media3.common.MimeTypes.VIDEO_H265.equals(codecMimeType))
                 mf.setInteger(android.media.MediaFormat.KEY_PROFILE,
                         android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10);
+            // Profile 7 on the Dolby Vision decoder: as profile 7 first; if that's refused, as 8.1.
+            if (isDvProfile7(format) && androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(codecMimeType)) {
+                int attempt = dvConfigAttempt++;
+                if (attempt > 0) mf.setInteger(android.media.MediaFormat.KEY_PROFILE,
+                        android.media.MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheSt);
+                AppLog.i("Player", "Dolby Vision profile 7 · opening the Dolby Vision decoder as profile "
+                        + (attempt > 0 ? "8.1 (retry)" : "7"));
+            }
             return mf;
         }
+    }
+
+    private static boolean isDvProfile7(androidx.media3.common.Format f) {
+        if (!androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(f.sampleMimeType)) return false;
+        android.util.Pair<Integer, Integer> p = androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getCodecProfileAndLevel(f);
+        return p != null && p.first == android.media.MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheDtb;
+    }
+
+    /** The same format, described as Dolby Vision profile 8 ("dvhe.07.06" → "dvhe.08.06"). */
+    private static androidx.media3.common.Format asProfile8(androidx.media3.common.Format f) {
+        String c = f.codecs == null ? "" : f.codecs;
+        String p8 = c.matches("(?i)(dvhe|dvh1)\\.07.*") ? c.substring(0, 5) + "08" + c.substring(7) : "dvhe.08.06";
+        return f.buildUpon().setCodecs(p8).build();
     }
 
     /** "P5 P8" etc.: the Dolby Vision profiles a decoder says it handles. */
