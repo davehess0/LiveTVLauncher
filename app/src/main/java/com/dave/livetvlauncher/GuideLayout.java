@@ -43,6 +43,11 @@ public final class GuideLayout extends HomeLayout {
         previewPlayer.setVolume(0f);
         previewPlayer.addListener(new androidx.media3.common.Player.Listener() {
             @Override public void onTracksChanged(androidx.media3.common.Tracks t) {
+                String info = describe(t);
+                if (!info.isEmpty() && !info.equals(streamInfo.get(ch))) {
+                    streamInfo.put(ch, info);
+                    if (heroCh == ch) showHero(ch);
+                }
                 // No decoder for this video here (e.g. MPEG-2 on a tablet): preview with VLC instead.
                 if (t.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)
                         && !t.isTypeSupported(androidx.media3.common.C.TRACK_TYPE_VIDEO) && previewCh == ch) {
@@ -119,6 +124,29 @@ public final class GuideLayout extends HomeLayout {
         LinearLayout view;
         TextView title;
         Ui.ProgressLine progress;
+        android.widget.ImageView logo; // shown instead of the progress bar when there's no guide
+    }
+
+    /** What each previewed channel's stream turned out to be, e.g. "1080p · H.264 · Stereo". */
+    private final java.util.Map<Channel, String> streamInfo = new java.util.HashMap<>();
+
+    private static String describe(androidx.media3.common.Tracks t) {
+        String video = "", audio = "";
+        for (androidx.media3.common.Tracks.Group g : t.getGroups()) {
+            if (g.length == 0) continue;
+            androidx.media3.common.Format f = g.getTrackFormat(0);
+            if (g.getType() == androidx.media3.common.C.TRACK_TYPE_VIDEO && video.isEmpty()) {
+                int h = Math.min(f.width, f.height) > 0 ? Math.min(f.width, f.height) : f.height;
+                String res = h >= 2000 ? "4K" : h > 0 ? h + "p" : "";
+                String m = f.sampleMimeType == null ? "" : f.sampleMimeType;
+                String codec = m.contains("hevc") ? "HEVC" : m.contains("avc") ? "H.264" : m.contains("mpeg2") ? "MPEG-2"
+                        : m.contains("av01") ? "AV1" : m.contains("vp9") ? "VP9" : "";
+                video = res + (codec.isEmpty() ? "" : (res.isEmpty() ? "" : " · ") + codec);
+            } else if (g.getType() == androidx.media3.common.C.TRACK_TYPE_AUDIO && audio.isEmpty() && f.channelCount > 0) {
+                audio = f.channelCount >= 6 ? "5.1" : f.channelCount == 1 ? "Mono" : "Stereo";
+            }
+        }
+        return video + (audio.isEmpty() ? "" : (video.isEmpty() ? "" : " · ") + audio);
     }
 
     public GuideLayout(LauncherActivity host, boolean asOverlay) {
@@ -419,7 +447,7 @@ public final class GuideLayout extends HomeLayout {
         LinearLayout mid = new LinearLayout(c);
         mid.setOrientation(LinearLayout.VERTICAL);
         TextView name = Ui.text(c, 12, Ui.SUB, true);
-        name.setText(ch.name + (ch.hd ? "  ·  HD" : ""));
+        name.setText(ch.displayName() + (ch.hd ? "  ·  HD" : ""));
         mid.addView(name);
         r.title = Ui.text(c, 16, Ui.TEXT, true);
         r.title.setPadding(0, dp(3), 0, 0);
@@ -427,6 +455,14 @@ public final class GuideLayout extends HomeLayout {
         v.addView(mid, Ui.lpWeight(0, -2, 1));
         r.progress = new Ui.ProgressLine(c, Ui.TEXT);
         v.addView(r.progress, Ui.margins(Ui.lp(dp(72), dp(4)), dp(14), 0, 0, 0));
+        // No guide: the channel's logo sits where the progress bar would be.
+        if (ch.logoUrl != null) {
+            r.logo = new android.widget.ImageView(c);
+            r.logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+            r.logo.setVisibility(View.GONE);
+            v.addView(r.logo, Ui.margins(Ui.lp(dp(72), dp(36)), dp(14), 0, 0, 0));
+            ImageLoader.load(r.logo, ch.logoUrl, dp(72));
+        }
 
         v.setOnClickListener(x -> host.play(ch));
         LinearLayout.LayoutParams lp = Ui.margins(Ui.lp(-1, -2), 0, 0, 0, dp(8));
@@ -440,9 +476,14 @@ public final class GuideLayout extends HomeLayout {
     private void fillRow(Row r) {
         long now = now();
         Channel.Airing a = r.ch.now(now);
-        r.title.setText(a != null ? a.title : "—");
+        // Without a guide: the playlist group (IPTV) instead of a dash, and the logo instead of a bar.
+        String noGuide = r.ch.iptv && !r.ch.group.isEmpty() ? r.ch.group : r.ch.iptv ? "Live" : "—";
+        r.title.setText(a != null ? a.title : noGuide);
+        r.title.setTextColor(a != null ? Ui.TEXT : Ui.SUB);
         r.progress.setProgress(a != null ? a.progress(now) : 0f);
-        r.progress.setVisibility(a != null ? View.VISIBLE : View.INVISIBLE);
+        boolean showLogo = a == null && r.logo != null;
+        r.progress.setVisibility(a != null ? View.VISIBLE : showLogo ? View.GONE : View.INVISIBLE);
+        if (r.logo != null) r.logo.setVisibility(showLogo ? View.VISIBLE : View.GONE);
     }
 
     private void showHero(Channel ch) {
@@ -465,18 +506,25 @@ public final class GuideLayout extends HomeLayout {
         boolean h24 = prefs.clock24h();
         Channel.Airing a = ch.now(now);
         Channel.Airing n = ch.next(now);
-        heroChannel.setText(ch.number + "  ·  " + ch.name);
+        heroChannel.setText(ch.number + "  ·  " + ch.displayName());
+        String info = streamInfo.get(ch);
         if (a != null) {
             heroTitle.setText(a.title);
             String ep = a.episodeTitle.isEmpty() ? "" : "  ·  " + (a.episodeNumber.isEmpty() ? "" : a.episodeNumber + " ") + a.episodeTitle;
-            heroMeta.setText(Ui.range(a, h24) + "  ·  " + Ui.timeLeft(a, now) + ep);
+            heroMeta.setText(Ui.range(a, h24) + "  ·  " + Ui.timeLeft(a, now) + ep + (info != null ? "  ·  " + info : ""));
+            heroProgress.setVisibility(View.VISIBLE);
             heroSynopsis.setText(a.synopsis);
             heroProgress.setProgress(a.progress(now));
         } else {
-            heroTitle.setText(ch.name);
-            heroMeta.setText("Guide data not available for this channel");
-            heroSynopsis.setText("");
-            heroProgress.setProgress(0);
+            // No guide: what we do know about the channel, and how to get a guide for it.
+            heroTitle.setText(ch.displayName());
+            String source = ch.iptv ? "IPTV" : ch.tunarr ? "Tunarr" : "Antenna";
+            String group = ch.iptv && !ch.group.isEmpty() ? ch.group + "  ·  " : "";
+            heroMeta.setText(group + source + (info != null ? "  ·  " + info : ""));
+            heroSynopsis.setText(ch.iptv
+                    ? "No guide for this channel. Your provider's guide may list it under another name, or set a guide in Settings → IPTV → Guide (XMLTV)."
+                    : "No guide data for this channel right now.");
+            heroProgress.setVisibility(View.GONE);
         }
         heroNext.setText(n != null ? "Up Next  ·  " + Ui.time(n.start, h24) + "  " + n.title : "");
     }

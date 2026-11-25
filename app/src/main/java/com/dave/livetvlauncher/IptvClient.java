@@ -132,13 +132,17 @@ final class IptvClient {
     static synchronized void forgetGuide() { cachedGuide = null; cachedGuideKey = null; }
 
     private static synchronized void applyGuide(String url, List<Channel> channels) throws Exception {
-        Map<String, Channel> byKey = new HashMap<>();
+        // Each key can match several playlist channels (e.g. "US: BBC America" and "BBC America HD").
+        Map<String, List<Channel>> byKey = new HashMap<>();
         for (Channel ch : channels) {
-            if (!ch.guideId.isEmpty()) byKey.putIfAbsent(key(ch.guideId), ch);
+            if (!ch.guideId.isEmpty()) add(byKey, key(ch.guideId), ch);
         }
         for (Channel ch : channels) {
-            byKey.putIfAbsent("n:" + key(ch.guideName), ch);
-            byKey.putIfAbsent("n:" + key(ch.name), ch);
+            add(byKey, "n:" + key(ch.guideName), ch);
+            add(byKey, "n:" + key(ch.name), ch);
+            // Loose match: without country prefixes, (D) / [HD] tags and quality words.
+            add(byKey, "l:" + loose(ch.guideName), ch);
+            add(byKey, "l:" + loose(ch.name), ch);
         }
         String cacheKey = url + "|" + channels.size();
         if (cachedGuide == null || !cacheKey.equals(cachedGuideKey) || System.currentTimeMillis() - cachedGuideAt > GUIDE_MAX_AGE_MS) {
@@ -152,11 +156,35 @@ final class IptvClient {
                     + (cachedGuideAt - t0) / 1000 + " s");
         }
         long now = System.currentTimeMillis() / 1000L;
+        int matched = 0;
         for (Map.Entry<String, List<Channel.Airing>> e : cachedGuide.entrySet()) {
-            Channel ch = byKey.get(e.getKey());
-            if (ch == null || !ch.airings.isEmpty()) continue;
-            for (Channel.Airing a : e.getValue()) if (a.end > now - 3600) ch.airings.add(a);
+            List<Channel> chs = byKey.get(e.getKey());
+            if (chs == null) continue;
+            for (Channel ch : chs) {
+                if (!ch.airings.isEmpty()) continue;
+                for (Channel.Airing a : e.getValue()) if (a.end > now - 3600) ch.airings.add(a);
+                if (!ch.airings.isEmpty()) matched++;
+            }
         }
+        AppLog.i("IPTV", "Guide matched " + matched + " of " + channels.size() + " channels");
+    }
+
+    private static void add(Map<String, List<Channel>> m, String k, Channel ch) {
+        if (k.endsWith(":") || k.isEmpty()) return;
+        List<Channel> l = m.get(k);
+        if (l == null) m.put(k, l = new ArrayList<>());
+        if (!l.contains(ch)) l.add(ch);
+    }
+
+    /** A forgiving key for names: "US: BBC America (D) HD" and "BBC America" both give "bbcamerica". */
+    static String loose(String s) {
+        if (s == null) return "";
+        String t = s.toLowerCase(Locale.US)
+                .replaceFirst("^\\s*[a-z]{2,3}\\s*[:|\\-]\\s*", "")       // country prefix
+                .replaceAll("[\\(\\[][^\\)\\]]*[\\)\\]]", " ")              // (D), [HD], (East)…
+                .replaceAll("\\b(fhd|uhd|hd|sd|4k|hevc|h265|backup|vip)\\b", " ")
+                .replaceFirst("\\.[a-z]{2,3}$", "");                           // XMLTV ids like bbcamerica.us
+        return t.replaceAll("[^a-z0-9]", "");
     }
 
     /**
@@ -229,6 +257,12 @@ final class IptvClient {
                             String nk = "n:" + key(names.get(i));
                             if (wanted.contains(nk)) k = nk;
                         }
+                        // Then the forgiving match, on the guide's names and on its channel id.
+                        for (int i = 0; k == null && i < names.size(); i++) {
+                            String lk = "l:" + loose(names.get(i));
+                            if (wanted.contains(lk)) k = lk;
+                        }
+                        if (k == null && wanted.contains("l:" + loose(channelId))) k = "l:" + loose(channelId);
                         if (k != null) idToKey.put(channelId, k);
                         channelId = null;
                     } else if ("programme".equals(p.getName())) {

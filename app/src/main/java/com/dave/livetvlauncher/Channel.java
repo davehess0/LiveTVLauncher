@@ -18,6 +18,16 @@ public final class Channel {
     public String guideName = "";  // IPTV tvg-name (or the channel name)
     public final List<Airing> airings = new ArrayList<>();
 
+    /**
+     * The name to show. IPTV playlists often prefix every name with a country tag ("US: BBC America",
+     * "UK | Dave"); that's dropped, since the whole list shares it.
+     */
+    public String displayName() {
+        if (!iptv) return name;
+        String n = name.replaceFirst("^\\s*[A-Za-z]{2,3}\\s*[:|]\\s*", "").trim();
+        return n.isEmpty() ? name : n;
+    }
+
     public static final class Airing {
         public long start;  // unix seconds
         public long end;    // unix seconds
