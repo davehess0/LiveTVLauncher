@@ -133,7 +133,7 @@ public abstract class HomeLayout {
 
     protected String nowTitle(Channel ch) {
         Channel.Airing a = ch.now(now());
-        return a != null ? a.title : ch.name;
+        return a != null ? a.title : ch.displayName();
     }
 
     /** "LIVE" pill. */
@@ -379,7 +379,7 @@ public abstract class HomeLayout {
 
     private static final class RecentTile {
         Channel ch;
-        TextView title;
+        TextView title, nm;
         Ui.ProgressLine progress;
     }
     private final java.util.List<RecentTile> recentTiles = new java.util.ArrayList<>();
@@ -428,10 +428,9 @@ public abstract class HomeLayout {
             v.setTag(ch.number);
             v.setPadding(dp(12), dp(10), dp(12), dp(10));
             v.addView(logo(ch, tileWDp - 24, 52, 22), Ui.lp(-1, dp(52)));
-            TextView nm = Ui.text(c, 12, Ui.ACCENT, true);
-            nm.setText(ch.number + "  " + ch.name);
-            nm.setPadding(0, dp(8), 0, 0);
-            v.addView(nm);
+            t.nm = Ui.text(c, 12, Ui.ACCENT, true);
+            t.nm.setPadding(0, dp(8), 0, 0);
+            v.addView(t.nm);
             t.title = Ui.text(c, 14, Ui.TEXT, true);
             t.title.setPadding(0, dp(2), 0, 0);
             v.addView(t.title);
@@ -457,7 +456,9 @@ public abstract class HomeLayout {
         long now = now();
         for (RecentTile t : recentTiles) {
             Channel.Airing a = t.ch.now(now);
-            t.title.setText(a != null ? a.title : t.ch.name);
+            // No guide: the name once (as the title), with just the number above it.
+            t.nm.setText(a != null ? t.ch.number + "  " + t.ch.displayName() : t.ch.number);
+            t.title.setText(a != null ? a.title : t.ch.displayName());
             t.progress.setProgress(a != null ? a.progress(now) : 0);
             t.progress.setVisibility(a != null ? View.VISIBLE : View.INVISIBLE);
         }

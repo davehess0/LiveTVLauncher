@@ -125,6 +125,7 @@ public final class GuideLayout extends HomeLayout {
         TextView title;
         Ui.ProgressLine progress;
         android.widget.ImageView logo; // shown instead of the progress bar when there's no guide
+        TextView name;                 // small channel-name line above the show title
     }
 
     /** What each previewed channel's stream turned out to be, e.g. "1080p · H.264 · Stereo". */
@@ -448,6 +449,7 @@ public final class GuideLayout extends HomeLayout {
         mid.setOrientation(LinearLayout.VERTICAL);
         TextView name = Ui.text(c, 12, Ui.SUB, true);
         name.setText(ch.displayName() + (ch.hd ? "  ·  HD" : ""));
+        r.name = name;
         mid.addView(name);
         r.title = Ui.text(c, 16, Ui.TEXT, true);
         r.title.setPadding(0, dp(3), 0, 0);
@@ -476,10 +478,11 @@ public final class GuideLayout extends HomeLayout {
     private void fillRow(Row r) {
         long now = now();
         Channel.Airing a = r.ch.now(now);
-        // Without a guide: the playlist group (IPTV) instead of a dash, and the logo instead of a bar.
-        String noGuide = r.ch.iptv && !r.ch.group.isEmpty() ? r.ch.group : r.ch.iptv ? "Live" : "—";
-        r.title.setText(a != null ? a.title : noGuide);
-        r.title.setTextColor(a != null ? Ui.TEXT : Ui.SUB);
+        // Without a guide: just the channel's name, large, in place of the show title (no small
+        // name line above it), and its logo instead of the progress bar.
+        r.title.setText(a != null ? a.title : r.ch.displayName());
+        r.title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, a != null ? 16 : 20);
+        r.name.setVisibility(a != null ? View.VISIBLE : View.GONE);
         r.progress.setProgress(a != null ? a.progress(now) : 0f);
         boolean showLogo = a == null && r.logo != null;
         r.progress.setVisibility(a != null ? View.VISIBLE : showLogo ? View.GONE : View.INVISIBLE);
@@ -519,8 +522,7 @@ public final class GuideLayout extends HomeLayout {
             // No guide: what we do know about the channel, and how to get a guide for it.
             heroTitle.setText(ch.displayName());
             String source = ch.iptv ? "IPTV" : ch.tunarr ? "Tunarr" : "Antenna";
-            String group = ch.iptv && !ch.group.isEmpty() ? ch.group + "  ·  " : "";
-            heroMeta.setText(group + source + (info != null ? "  ·  " + info : ""));
+            heroMeta.setText(source + (info != null ? "  ·  " + info : ""));
             heroSynopsis.setText(ch.iptv
                     ? "No guide for this channel. Your provider's guide may list it under another name, or set a guide in Settings → IPTV → Guide (XMLTV)."
                     : "No guide data for this channel right now.");

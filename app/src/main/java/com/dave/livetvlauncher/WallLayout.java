@@ -24,7 +24,7 @@ public final class WallLayout extends HomeLayout {
     private static final class Card {
         Channel ch;
         LinearLayout view;
-        TextView title;
+        TextView title, nm;
         Ui.ProgressLine progress;
     }
 
@@ -145,10 +145,9 @@ public final class WallLayout extends HomeLayout {
         v.setPadding(dp(12), dp(12), dp(12), dp(12));
         View lg = logo(ch, 10, 74, 26);
         v.addView(lg, Ui.lp(-1, dp(74)));
-        TextView nm = Ui.text(c, 13, Ui.ACCENT, true);
-        nm.setText(ch.number + "  " + ch.name);
-        nm.setPadding(0, dp(10), 0, 0);
-        v.addView(nm);
+        k.nm = Ui.text(c, 13, Ui.ACCENT, true);
+        k.nm.setPadding(0, dp(10), 0, 0);
+        v.addView(k.nm);
         k.title = Ui.text(c, 15, Ui.TEXT, true);
         k.title.setPadding(0, dp(4), 0, 0);
         v.addView(k.title);
@@ -171,14 +170,16 @@ public final class WallLayout extends HomeLayout {
     private void fill(Card k) {
         long now = now();
         Channel.Airing a = k.ch.now(now);
-        k.title.setText(a != null ? a.title : k.ch.name);
+        k.nm.setText(a != null ? k.ch.number + "  " + k.ch.displayName() : k.ch.number);
+        k.title.setText(a != null ? a.title : k.ch.displayName());
         k.progress.setProgress(a != null ? a.progress(now) : 0);
         k.progress.setVisibility(a != null ? View.VISIBLE : View.INVISIBLE);
     }
 
     private void updateResume() {
         Channel last = ChannelStore.get().byNumber(prefs.lastChannel());
-        if (last != null) setSubtitle(resumeTile, last.number + " " + last.name + " · " + nowTitle(last));
+        if (last != null) setSubtitle(resumeTile, last.number + " " + last.displayName()
+                + (last.now(now()) != null ? " · " + nowTitle(last) : ""));
         else setSubtitle(resumeTile, ChannelStore.get().isLoaded() ? "Start watching" : "Waiting for tuner…");
     }
 

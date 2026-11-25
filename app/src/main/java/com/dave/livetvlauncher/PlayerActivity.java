@@ -51,10 +51,10 @@ public final class PlayerActivity extends Activity {
         if (!contains) n++;
         String[] nums = new String[n], names = new String[n], urls = new String[n];
         int i = 0, startIdx = 0;
-        if (!contains) { nums[0] = start.number; names[0] = start.name; urls[0] = start.streamUrl; i = 1; }
+        if (!contains) { nums[0] = start.number; names[0] = start.displayName(); urls[0] = start.streamUrl; i = 1; }
         for (Channel ch : lineup) {
             if (ch == start) startIdx = i;
-            nums[i] = ch.number; names[i] = ch.name; urls[i] = ch.streamUrl; i++;
+            nums[i] = ch.number; names[i] = ch.displayName(); urls[i] = ch.streamUrl; i++;
         }
         return new Intent(c, PlayerActivity.class)
                 .putExtra(X_NUMS, nums).putExtra(X_NAMES, names).putExtra(X_URLS, urls)
