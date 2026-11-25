@@ -533,12 +533,102 @@ public final class PlayerActivity extends Activity {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent, View v, int pos, long id) {
                 ((ChannelGuideAdapter) guideList.getAdapter()).selected = pos;
                 ((ChannelGuideAdapter) guideList.getAdapter()).notifyDataSetChanged();
+                updateGuideInfo(pos); // what's on the channel you're hovered over, on the right
             }
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
         guide.addView(guideList, new LinearLayout.LayoutParams(-1, 0, 1));
         guide.setVisibility(View.GONE);
-        root.addView(guide, new FrameLayout.LayoutParams(Ui.dp(this, 620), -1, Gravity.START));
+        root.addView(guide, new FrameLayout.LayoutParams(Ui.dp(this, 520), -1, Gravity.START));
+        buildGuideInfo(root);
+    }
+
+    // ---- What's-on panel on the right of the channel list ----
+
+    private LinearLayout guideInfo;
+    private TextView giChannel, giTitle, giMeta, giDesc, giNext;
+    private Ui.ProgressLine giProgress;
+
+    private void buildGuideInfo(FrameLayout root) {
+        guideInfo = new LinearLayout(this);
+        guideInfo.setOrientation(LinearLayout.VERTICAL);
+        int p = Ui.dp(this, 26);
+        guideInfo.setPadding(p, p, p, p);
+        guideInfo.setBackground(Ui.rounded(0xE6141418, Ui.dp(this, 20), 0, 0));
+        guideInfo.setVisibility(View.GONE);
+
+        LinearLayout chLine = new LinearLayout(this);
+        chLine.setGravity(Gravity.CENTER_VERTICAL);
+        TextView live = Ui.text(this, 11, Ui.TEXT, true);
+        live.setText(" LIVE ");
+        live.setPadding(Ui.dp(this, 6), Ui.dp(this, 2), Ui.dp(this, 6), Ui.dp(this, 2));
+        live.setBackground(Ui.rounded(Ui.LIVE_RED, Ui.dp(this, 4), 0, 0));
+        chLine.addView(live);
+        giChannel = Ui.text(this, 14, Ui.SUB, true);
+        giChannel.setPadding(Ui.dp(this, 10), 0, 0, 0);
+        chLine.addView(giChannel);
+        guideInfo.addView(chLine);
+
+        giTitle = Ui.text(this, 22, Ui.TEXT, true);
+        giTitle.setSingleLine(false);
+        giTitle.setMaxLines(2);
+        giTitle.setPadding(0, Ui.dp(this, 10), 0, 0);
+        guideInfo.addView(giTitle);
+
+        giMeta = Ui.text(this, 14, Ui.SUB, false);
+        giMeta.setPadding(0, Ui.dp(this, 6), 0, 0);
+        guideInfo.addView(giMeta);
+
+        giProgress = new Ui.ProgressLine(this, Ui.TEXT);
+        guideInfo.addView(giProgress, Ui.margins(Ui.lp(-1, Ui.dp(this, 4)), 0, Ui.dp(this, 12), 0, 0));
+
+        giDesc = Ui.text(this, 14, 0xFFD1D1D6, false);
+        giDesc.setSingleLine(false);
+        giDesc.setMaxLines(6);
+        giDesc.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        giDesc.setPadding(0, Ui.dp(this, 12), 0, 0);
+        guideInfo.addView(giDesc);
+
+        giNext = Ui.text(this, 14, Ui.SUB, false);
+        giNext.setPadding(0, Ui.dp(this, 12), 0, 0);
+        guideInfo.addView(giNext);
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                Ui.dp(this, 380), -2, Gravity.END | Gravity.CENTER_VERTICAL);
+        lp.rightMargin = Ui.dp(this, 36);
+        root.addView(guideInfo, lp);
+    }
+
+    /** Fills the right-hand panel with what's on the channel at {@code pos} in the list. */
+    private void updateGuideInfo(int pos) {
+        if (guideInfo == null || nums == null || pos < 0 || pos >= nums.length) return;
+        Channel ch = ChannelStore.get().byNumber(nums[pos]);
+        long now = System.currentTimeMillis() / 1000L;
+        Channel.Airing a = ch != null ? ch.now(now) : null;
+        Channel.Airing n = ch != null ? ch.next(now) : null;
+        boolean h24 = prefs.clock24h();
+        // With a guide the title line also names the channel; without one the name is the big title.
+        giChannel.setText(nums[pos] + (a != null ? "  ·  " + names[pos] : ""));
+        if (a != null) {
+            giTitle.setText(a.title);
+            String ep = a.episodeTitle.isEmpty() ? ""
+                    : "  ·  " + (a.episodeNumber.isEmpty() ? "" : a.episodeNumber + " ") + a.episodeTitle;
+            giMeta.setText(Ui.range(a, h24) + "  ·  " + Ui.timeLeft(a, now) + ep);
+            giMeta.setVisibility(View.VISIBLE);
+            giProgress.setProgress(a.progress(now));
+            giProgress.setVisibility(View.VISIBLE);
+            giDesc.setText(a.synopsis);
+            giDesc.setVisibility(a.synopsis.isEmpty() ? View.GONE : View.VISIBLE);
+            giNext.setText(n != null ? "Up Next  ·  " + Ui.time(n.start, h24) + "  " + n.title : "");
+            giNext.setVisibility(n != null ? View.VISIBLE : View.GONE);
+        } else {
+            giTitle.setText(names[pos]);
+            giMeta.setText(ch != null && ch.iptv ? "No guide for this channel" : "No guide data for this channel");
+            giMeta.setVisibility(View.VISIBLE);
+            giProgress.setVisibility(View.GONE);
+            giDesc.setVisibility(View.GONE);
+            giNext.setVisibility(View.GONE);
+        }
     }
 
     private void showChannelGuide() {
@@ -547,6 +637,7 @@ public final class PlayerActivity extends Activity {
         if (controls != null) { handler.removeCallbacks(hideControls); controls.setVisibility(View.GONE); }
         ((ChannelGuideAdapter) guideList.getAdapter()).notifyDataSetChanged();
         guide.setVisibility(View.VISIBLE);
+        if (guideInfo != null) { updateGuideInfo(index); guideInfo.setVisibility(View.VISIBLE); }
         guideList.requestFocus();
         guideList.setSelectionFromTop(index, Ui.dp(this, 200)); // current channel, a little below the top
         bumpGuideTimer();
@@ -556,6 +647,7 @@ public final class PlayerActivity extends Activity {
         if (guide == null || guide.getVisibility() != View.VISIBLE) return;
         handler.removeCallbacks(hideGuide);
         guide.setVisibility(View.GONE);
+        if (guideInfo != null) guideInfo.setVisibility(View.GONE);
         view.requestFocus();
     }
 
