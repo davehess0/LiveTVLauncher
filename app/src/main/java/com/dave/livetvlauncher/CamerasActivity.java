@@ -262,8 +262,9 @@ public final class CamerasActivity extends Activity {
                 return "The camera turned down the user name / password (" + status + ")."
                         + "\nRe-copy them from the camera's RTSP settings in the Eufy app.";
             case 404:
-                return "No stream right now (404). The camera may be asleep: open its live view in the Eufy app "
-                        + "to wake it. Each camera has its own RTSP address and login.";
+                return "No stream right now (404). The camera may be asleep (open its live view in the Eufy app "
+                        + "to wake it), RTSP may be off for it, or the /liveN number may be off by one (the first "
+                        + "camera on a HomeBase is often /live0).";
             case 461:
                 return "The camera didn't accept that connection type (461); trying the other one";
             case 453:
@@ -291,29 +292,6 @@ public final class CamerasActivity extends Activity {
             default:
                 return "Camera stream problem (" + e.getErrorCodeName() + ")";
         }
-    }
-
-    /**
-     * Names of cameras that share one login on the same device (e.g. one HomeBase). Eufy gives each
-     * camera its own RTSP user name and password, so a shared one is almost always a copy-paste slip.
-     */
-    static List<String> sharedLogins(List<String[]> cams) {
-        java.util.Map<String, List<String>> byLogin = new java.util.LinkedHashMap<>();
-        for (String[] c : cams) {
-            try {
-                Uri u = Uri.parse(c[1].trim());
-                String info = u.getEncodedUserInfo();
-                if (info == null || info.isEmpty() || u.getHost() == null) continue;
-                String user = info.contains(":") ? info.substring(0, info.indexOf(':')) : info;
-                String k = u.getHost() + "|" + Uri.decode(user);
-                List<String> l = byLogin.get(k);
-                if (l == null) byLogin.put(k, l = new ArrayList<>());
-                l.add(c[0]);
-            } catch (Exception ignored) { }
-        }
-        List<String> out = new ArrayList<>();
-        for (List<String> l : byLogin.values()) if (l.size() > 1) out.addAll(l);
-        return out;
     }
 
     /**
