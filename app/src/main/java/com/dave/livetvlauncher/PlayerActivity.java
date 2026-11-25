@@ -764,6 +764,7 @@ public final class PlayerActivity extends Activity {
             @Override public void onTracksChanged(Tracks tracks) {
                 if (vlc != null) return;
                 logVideoFormat(tracks);
+                logAvCapabilities(tracks);
                 if (tracks.isEmpty()) return;
                 // A video or audio track this device has no decoder for: hand over to VLC
                 // (otherwise the picture stays black, or the sound is missing).
@@ -1010,6 +1011,58 @@ public final class PlayerActivity extends Activity {
         }
     }
 
+    private boolean loggedCaps;
+
+    /**
+     * One-time, per title: the audio tracks and whether ExoPlayer can play each; what the connected
+     * TV / receiver accepts as a bitstream (Dolby Atmos needs E-AC3-JOC or TrueHD listed here); and
+     * whether the video is Dolby Vision. Explains why Atmos/DV may differ from the Plex app.
+     */
+    private void logAvCapabilities(Tracks tracks) {
+        if (loggedCaps) return;
+        loggedCaps = true;
+        String what = plexMode ? "Plex item" : "Channel " + nums[index];
+
+        for (Tracks.Group g : tracks.getGroups()) {
+            if (g.getType() != C.TRACK_TYPE_AUDIO || g.length == 0) continue;
+            androidx.media3.common.Format f = g.getTrackFormat(0);
+            AppLog.i("Player", what + " audio " + f.sampleMimeType + " · " + f.channelCount + "ch"
+                    + (f.codecs != null ? " · " + f.codecs : "")
+                    + " · " + (g.isTrackSupported(0) ? "ExoPlayer plays it (passthrough or decode)"
+                    : "ExoPlayer can't → would use VLC (decodes to PCM, loses Atmos)"));
+        }
+
+        // What the HDMI chain (TV or AV receiver) will bitstream. Atmos only passes through if
+        // "Atmos(E-AC3-JOC)" or "TrueHD" appears here; otherwise ExoPlayer decodes to PCM at best.
+        try {
+            androidx.media3.exoplayer.audio.AudioCapabilities caps =
+                    androidx.media3.exoplayer.audio.AudioCapabilities.getCapabilities(this);
+            String[] names = {"AC3", "E-AC3", "Atmos(E-AC3-JOC)", "TrueHD", "DTS", "DTS-HD"};
+            int[] encs = {android.media.AudioFormat.ENCODING_AC3, android.media.AudioFormat.ENCODING_E_AC3,
+                    android.media.AudioFormat.ENCODING_E_AC3_JOC, android.media.AudioFormat.ENCODING_DOLBY_TRUEHD,
+                    android.media.AudioFormat.ENCODING_DTS, android.media.AudioFormat.ENCODING_DTS_HD};
+            StringBuilder ok = new StringBuilder();
+            for (int i = 0; i < encs.length; i++)
+                if (caps.supportsEncoding(encs[i])) ok.append(ok.length() > 0 ? ", " : "").append(names[i]);
+            AppLog.i("Player", "TV/receiver bitstream support: " + (ok.length() > 0 ? ok : "none (PCM only)")
+                    + " · up to " + caps.getMaxChannelCount() + "ch");
+        } catch (Exception e) {
+            AppLog.w("Player", "Couldn't read audio bitstream capabilities (" + e.getClass().getSimpleName() + ")");
+        }
+
+        for (Tracks.Group g : tracks.getGroups()) {
+            if (g.getType() != C.TRACK_TYPE_VIDEO || g.length == 0) continue;
+            androidx.media3.common.Format f = g.getTrackFormat(0);
+            boolean dv = androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(f.sampleMimeType)
+                    || (f.codecs != null && (f.codecs.startsWith("dvh") || f.codecs.startsWith("dva") || f.codecs.startsWith("dav")));
+            if (dv) AppLog.i("Player", what + " is Dolby Vision (codecs " + f.codecs + ") · "
+                    + (g.isTrackSupported(0) ? "ExoPlayer will play it (single-layer DV, or the HDR10 base layer "
+                    + "for dual-layer profile 7 — the Plex app handles profile 7 via the Shield's own player)"
+                    : "ExoPlayer can't decode this profile"));
+            break;
+        }
+    }
+
     private void showError(String msg) {
         error.setText(msg);
         error.setVisibility(View.VISIBLE);
@@ -1034,6 +1087,7 @@ public final class PlayerActivity extends Activity {
         index = (i + nums.length) % nums.length;
         if (userAction) retries = 0;
         undecodable = false;
+        loggedCaps = false; // log this channel's audio/video capabilities once it starts
         prefs.setLastChannel(nums[index]);
         error.setVisibility(View.GONE);
         spinner.setVisibility(View.VISIBLE); // tuning can take a few seconds (Tunarr longer)
