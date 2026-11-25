@@ -213,6 +213,12 @@ Builds then go there instead of `app/build/`, and the APK lands in `<buildRoot>/
 
 The release build is signed with the local debug key so you can sideload it without extra setup.
 
+## Setting it as your home screen
+
+The first time you open Live TV Home (on any device where it isn't already the home screen), it asks **"Make Live TV Home your home screen?"** Choose **Set as home** and Android shows its own "Home app" prompt; pick Live TV Home. Then the remote's Home button opens it and it starts when the device turns on. **Not now** asks again next launch; **Don't ask again** stops the prompt. You can always change it later in Android's Settings → Apps → Default apps → Home app.
+
+On a phone or tablet (OnePlus Pad, etc.) that's all you need. On the Shield's **restricted profile**, Android blocks changing the home app, so use the adb steps below instead (run from the main profile).
+
 ## Install on the Shield without loosening the restricted profile
 
 Do these steps from the **main (owner) profile**. The restricted profile's PIN and restrictions stay as they are. The only change is allowing one more app in it.

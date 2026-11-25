@@ -66,6 +66,10 @@ public final class Prefs {
     public boolean startOnLastChannel() { return sp.getBoolean("startOnLastChannel", true); }
     public void setStartOnLastChannel(boolean v) { sp.edit().putBoolean("startOnLastChannel", v).apply(); }
 
+    /** Whether the one-time "set as your home screen?" prompt has been shown (or dismissed for good). */
+    public boolean askedHome() { return sp.getBoolean("askedHome", false); }
+    public void setAskedHome(boolean v) { sp.edit().putBoolean("askedHome", v).apply(); }
+
     /** Security cameras: [{"name":"Driveway","url":"rtsp://..."}] (stored only on this device). */
     public java.util.List<String[]> cameras() {
         java.util.List<String[]> out = new java.util.ArrayList<>();

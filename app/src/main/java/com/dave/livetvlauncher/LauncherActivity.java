@@ -182,6 +182,70 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         super.onDestroy();
     }
 
+    private boolean offeredHome; // only once per app run
+
+    /** True if this app is already the device's home screen (the default HOME app). */
+    private boolean isDefaultHome() {
+        // The role is the authoritative answer on Android 10+ (every Shield and tablet we target).
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                android.app.role.RoleManager rm = (android.app.role.RoleManager) getSystemService(ROLE_SERVICE);
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME))
+                    return rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME);
+            } catch (Exception ignored) {
+                // Fall back to resolving the HOME intent.
+            }
+        }
+        android.content.pm.ResolveInfo ri = getPackageManager().resolveActivity(
+                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+                android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+        return ri != null && getPackageName().equals(ri.activityInfo.packageName);
+    }
+
+    /**
+     * On first launch, offer to make this the home screen. Skipped if it already is the home app, or
+     * once the user has answered. (In a restricted profile, Android blocks changing the home app, so
+     * the prompt points to the owner profile instead.)
+     */
+    private void maybeOfferHome() {
+        if (offeredHome || prefs.askedHome() || isDefaultHome()) return;
+        if (alertDialog != null && alertDialog.isShowing()) return; // don't stack on a weather alert
+        offeredHome = true;
+        AppLog.i("Home", "Offering to set Live TV Home as the home screen");
+
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle("Make Live TV Home your home screen?")
+                .setMessage("Then your remote's Home button opens Live TV Home, and it starts automatically "
+                        + "when the device turns on — like a cable box.\n\nYou can change this any time in "
+                        + "Android's Home app settings.")
+                .setPositiveButton("Set as home", (d, w) -> { prefs.setAskedHome(true); openHomeChooser(); })
+                .setNegativeButton("Not now", (d, w) -> { /* ask again next launch */ })
+                .setNeutralButton("Don't ask again", (d, w) -> prefs.setAskedHome(true));
+        b.show();
+    }
+
+    /** Ask Android to make this the home app (system dialog on Android 10+), or open Home settings. */
+    private void openHomeChooser() {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                android.app.role.RoleManager rm = (android.app.role.RoleManager) getSystemService(ROLE_SERVICE);
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)
+                        && !rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) {
+                    startActivity(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME));
+                    return;
+                }
+            } catch (Exception ignored) {
+                // Fall back to the settings screen below.
+            }
+        }
+        try {
+            startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS));
+        } catch (Exception e) {
+            Toast.makeText(this, "Open Android Settings → Apps → Default apps → Home app, and pick Live TV Home. "
+                    + "A restricted profile can't change this; use the main profile.", Toast.LENGTH_LONG).show();
+        }
+    }
+
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
@@ -204,6 +268,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         Weather.get().refreshIfStale(this, weatherLoaded);
         Weather.get().refreshAlertsIfStale(this, alertsChanged);
         content.post(this::maybeShowAlert); // an alert that arrived while another screen was open
+        content.post(this::maybeOfferHome); // first run: offer to make this the home screen
         handler.removeCallbacks(ticker);
         handler.postDelayed(ticker, TICK_MS);
     }
