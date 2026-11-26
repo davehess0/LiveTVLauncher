@@ -46,8 +46,21 @@ final class AppMenu {
             if (first == null) first = item;
         }
 
-        // Just below the tile (a focused tile is drawn a little larger, so leave a gap).
-        pw.showAsDropDown(anchor, 0, Ui.dp(a, 16), Gravity.START);
+        // Just below the tile, or above it when there isn't room below (near the bottom of the screen).
+        // Placed by hand: with a wrap-content height, Android squashes the menu instead of flipping it.
+        box.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        int w = box.getMeasuredWidth(), h = box.getMeasuredHeight();
+        View screen = a.getWindow().getDecorView();
+        int[] at = new int[2];
+        anchor.getLocationOnScreen(at); // includes the focused tile's lift / grow
+        int tileH = Math.round(anchor.getHeight() * anchor.getScaleY());
+        int gap = Ui.dp(a, 12), edge = Ui.dp(a, 16);
+        int below = at[1] + tileH + gap;
+        int y = below + h <= screen.getHeight() - edge ? below : Math.max(edge, at[1] - gap - h);
+        int x = Math.max(edge, Math.min(at[0], screen.getWidth() - edge - w));
+        pw.setWidth(w);
+        pw.setHeight(h);
+        pw.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y);
         final View f = first;
         if (f != null) box.post(f::requestFocus);
         return pw;
