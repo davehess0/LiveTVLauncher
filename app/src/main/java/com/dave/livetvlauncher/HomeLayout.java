@@ -312,17 +312,112 @@ public abstract class HomeLayout {
         row.setClipChildren(false);
         row.setPadding(dp(4), dp(6), dp(4), dp(6));
         List<Apps.AppEntry> pins = Apps.pinned(c);
-        if (pins.isEmpty()) {
-            TextView t = Ui.text(c, 14, Ui.SUB, false);
-            t.setText("No streaming apps pinned. Open Apps and long-press OK on an app to pin it here.");
-            row.addView(t);
-        }
+        if (pins.isEmpty()) row.addView(emptyStreamingHint());
         for (Apps.AppEntry e : pins) {
             // Just the banner: the app's own logo says what it is.
-            row.addView(appTile(e), Ui.margins(Ui.lp(dp(wDp), dp(hDp)), 0, 0, dp(24), 0));
+            View t = appTile(e);
+            t.setTag(e.pkg);
+            // Hold OK: a menu below the app with Move and Remove.
+            t.setOnLongClickListener(v -> {
+                AppMenu.show(host, t, new String[]{"Move", "Remove"}, new Runnable[]{
+                        () -> startMove(row, t, e), () -> removeFromRow(row, t, e)});
+                return true;
+            });
+            row.addView(t, Ui.margins(Ui.lp(dp(wDp), dp(hDp)), 0, 0, dp(24), 0));
         }
         sv.addView(row);
         return bleed(sv);
+    }
+
+    private TextView emptyStreamingHint() {
+        TextView t = Ui.text(c, 14, Ui.SUB, false);
+        t.setText("No streaming apps here. Open Apps and hold OK on an app to add it.");
+        return t;
+    }
+
+    private void removeFromRow(LinearLayout row, View tile, Apps.AppEntry e) {
+        List<String> pins = prefs.pinnedApps();
+        pins.remove(e.pkg);
+        prefs.setPinnedApps(pins);
+        int i = row.indexOfChild(tile);
+        row.removeView(tile);
+        if (row.getChildCount() == 0) {
+            row.addView(emptyStreamingHint());
+            focusDefault();
+        } else {
+            row.getChildAt(Math.min(i, row.getChildCount() - 1)).requestFocus();
+        }
+        android.widget.Toast.makeText(c, e.label + " removed from the Streaming row", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Move mode: arrows on the app; Left / Right move it along the row (saved as it goes); OK or
+     * Back finishes. The neighbouring app is moved rather than this one, so it keeps the focus.
+     */
+    private void startMove(LinearLayout row, View tile, Apps.AppEntry e) {
+        if (!(tile instanceof android.widget.FrameLayout)) return;
+        android.widget.FrameLayout f = (android.widget.FrameLayout) tile;
+        android.widget.FrameLayout overlay = new android.widget.FrameLayout(c);
+        android.graphics.drawable.GradientDrawable scrim = new android.graphics.drawable.GradientDrawable();
+        scrim.setColor(0x99000000);
+        scrim.setCornerRadius(dp(16));
+        scrim.setStroke(dp(3), Ui.TEXT);
+        overlay.setBackground(scrim);
+        TextView left = Ui.text(c, 26, Ui.TEXT, true), right = Ui.text(c, 26, Ui.TEXT, true);
+        left.setText("◀");
+        right.setText("▶");
+        overlay.addView(left, new android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.START | Gravity.CENTER_VERTICAL));
+        overlay.addView(right, new android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
+        overlay.setPadding(dp(10), 0, dp(10), 0);
+        f.addView(overlay, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        tile.requestFocus();
+        android.widget.Toast.makeText(c, "◀ ▶ to move " + e.label + " · OK when done", android.widget.Toast.LENGTH_SHORT).show();
+
+        tile.setOnKeyListener((v, code, ev) -> {
+            boolean down = ev.getAction() == android.view.KeyEvent.ACTION_DOWN;
+            switch (code) {
+                case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
+                case android.view.KeyEvent.KEYCODE_DPAD_RIGHT: {
+                    if (!down) return true;
+                    int i = row.indexOfChild(tile);
+                    int j = i + (code == android.view.KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1);
+                    if (j < 0 || j >= row.getChildCount()) return true;
+                    View other = row.getChildAt(j);
+                    row.removeView(other);
+                    row.addView(other, i, other.getLayoutParams());
+                    savePinnedOrder(row);
+                    tile.post(() -> tile.requestRectangleOnScreen(
+                            new android.graphics.Rect(-dp(40), 0, tile.getWidth() + dp(40), tile.getHeight())));
+                    return true;
+                }
+                case android.view.KeyEvent.KEYCODE_DPAD_CENTER:
+                case android.view.KeyEvent.KEYCODE_ENTER:
+                case android.view.KeyEvent.KEYCODE_NUMPAD_ENTER:
+                case android.view.KeyEvent.KEYCODE_BACK:
+                case android.view.KeyEvent.KEYCODE_ESCAPE:
+                    if (!down && ev.getRepeatCount() == 0) {
+                        f.removeView(overlay);
+                        tile.setOnKeyListener(null);
+                    }
+                    return true;
+                case android.view.KeyEvent.KEYCODE_DPAD_UP:
+                case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+                    return true; // stay on the app while moving it
+                default:
+                    return false;
+            }
+        });
+    }
+
+    /** Saves the row's order; apps not shown in this profile keep their places at the end. */
+    private void savePinnedOrder(LinearLayout row) {
+        List<String> order = new java.util.ArrayList<>();
+        for (int i = 0; i < row.getChildCount(); i++) {
+            Object tag = row.getChildAt(i).getTag();
+            if (tag instanceof String) order.add((String) tag);
+        }
+        for (String p : prefs.pinnedApps()) if (!order.contains(p)) order.add(p);
+        prefs.setPinnedApps(order);
     }
 
     /** A horizontal row of Plex posters. Returns null when there's nothing to show. */

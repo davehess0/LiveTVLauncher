@@ -113,7 +113,8 @@ Every layout can show the current weather next to the clock, for example ☁️ 
 ## Streaming apps and Plex movies
 
 Every layout now has a **Streaming** row of big app banners. By default it shows YouTube, Prime Video, Disney+ and Plex (and SmartTube, if it's installed). It only shows the apps that are allowed in the current profile.
-- **To add or remove apps:** open **Apps** and long-press OK on any app to pin or unpin it.
+- **To add an app:** open **Apps**, hold OK on the app and choose **Add to Streaming row**.
+- **To move or remove an app:** hold OK on it in the Streaming row and choose **Move** (then ◀ ▶, and OK when done) or **Remove**.
 - **Plex rows:** *Continue watching* and *Recently added movies*, with posters.
   - **Channel Wall** shows them right under Streaming.
   - **Guide** shows them below the channel list.

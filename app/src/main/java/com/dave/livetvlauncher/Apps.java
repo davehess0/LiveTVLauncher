@@ -139,11 +139,15 @@ public final class Apps {
         }
         f.setContentDescription(e.label);
         f.setOnClickListener(v -> launch(a, e.pkg));
-        // Long-press OK: pin to / unpin from the Streaming row.
+        // Hold OK: a menu to add the app to (or remove it from) the Streaming row.
         f.setOnLongClickListener(v -> {
-            boolean pinned = new Prefs(a).togglePin(e.pkg);
-            Toast.makeText(a, e.label + (pinned ? " added to" : " removed from") + " the Streaming row",
-                    Toast.LENGTH_SHORT).show();
+            boolean pinned = new Prefs(a).pinnedApps().contains(e.pkg);
+            AppMenu.show(a, f, new String[]{pinned ? "Remove from Streaming row" : "Add to Streaming row"},
+                    new Runnable[]{() -> {
+                        boolean now = new Prefs(a).togglePin(e.pkg);
+                        Toast.makeText(a, e.label + (now ? " added to" : " removed from") + " the Streaming row",
+                                Toast.LENGTH_SHORT).show();
+                    }});
             return true;
         });
         return f;

@@ -55,7 +55,7 @@ public final class SettingsActivity extends Activity {
                         : Prefs.LAYOUT_WALL.equals(l) ? Prefs.LAYOUT_SIMPLE : Prefs.LAYOUT_GUIDE);
                 render();
             });
-            row("Streaming row", "Open Apps and long-press OK on any app to pin / unpin it",
+            row("Streaming row", "Hold OK on an app to add, move or remove it",
                     v -> startActivity(new android.content.Intent(this, AppsActivity.class)));
             row("Apps row on Channel Wall", prefs.showAppRow() ? "Shown" : "Hidden", v -> {
                 prefs.setShowAppRow(!prefs.showAppRow());

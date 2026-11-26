@@ -36,7 +36,7 @@ public final class AppsActivity extends Activity {
         title.setPadding(0, 0, 0, Ui.dp(this, 6));
         root.addView(title);
         TextView hint = Ui.text(this, 14, Ui.SUB, false);
-        hint.setText("Long-press OK on an app to pin it to (or remove it from) the Streaming row on your home screen.");
+        hint.setText("Hold OK on an app to add it to (or remove it from) the Streaming row on your home screen.");
         hint.setPadding(0, 0, 0, Ui.dp(this, 20));
         root.addView(hint);
 
