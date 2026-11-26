@@ -24,7 +24,7 @@ import java.util.Set;
  *     else HDHomeRun's cloud list (ipv4-api.hdhomerun.com/discover), else http://hdhomerun.local.
  *  2. discover.json on each tuner gives DeviceAuth + LineupURL.
  *  3. lineup.json gives channels and their direct stream URLs.
- *  4. api.hdhomerun.com/api/guide?DeviceAuth=... gives now/next guide data.
+ *  4. api.hdhomerun.com/api/guide?DeviceAuth=... gives guide data for the next 24 hours (free, no DVR subscription).
  *
  * No other hosts are contacted.
  */
@@ -106,7 +106,7 @@ public final class HdhrClient {
 
         if (deviceAuth.length() > 0) {
             try {
-                String guideUrl = "https://api.hdhomerun.com/api/guide?Duration=8&DeviceAuth="
+                String guideUrl = "https://api.hdhomerun.com/api/guide?Duration=24&DeviceAuth="
                         + URLEncoder.encode(deviceAuth.toString(), "UTF-8");
                 JSONArray guide = new JSONArray(get(guideUrl));
                 for (int i = 0; i < guide.length(); i++) {

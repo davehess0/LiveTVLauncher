@@ -52,6 +52,8 @@ public final class WallLayout extends HomeLayout {
         hdhrTile = sourceTile("HDHomeRun", Apps.installed(c, Apps.HDHR) ? "Live TV & DVR" : "Not available in this profile",
                 Ui.ACCENT, "▶", 22, v -> Apps.launch(host, Apps.HDHR));
         top.addView(resumeTile, Ui.margins(Ui.lpWeight(0, dp(150), 1.3f), 0, 0, dp(24), 0));
+        top.addView(sourceTile("Full Guide", "What's on later", Ui.ACCENT, "☰", 22, v -> host.openGrid()),
+                Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(24), 0));
         top.addView(hdhrTile, Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(24), 0));
         if (host.hasCameras()) top.addView(sourceTile("Cameras", "Live view", Ui.LIVE_RED, "◉", 22, v -> host.openCameras()),
                 Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(24), 0));

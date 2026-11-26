@@ -5,4 +5,12 @@
         <item name="android:windowShowWallpaper">false</item>
         <item name="android:colorAccent">#FF4FC3F7</item>
     </style>
+    <!-- Reminder pop-up: floats over whatever is on screen (another app, or live TV). -->
+    <style name="Theme.Reminder" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Toast</item>
+        <item name="android:colorAccent">#FF4FC3F7</item>
+    </style>
 </resources>

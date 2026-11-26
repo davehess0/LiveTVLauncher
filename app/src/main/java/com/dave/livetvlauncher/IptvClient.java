@@ -188,11 +188,11 @@ final class IptvClient {
     }
 
     /**
-     * Streams the XMLTV file and keeps airings from an hour ago to 14 hours ahead, keyed like
+     * Streams the XMLTV file and keeps airings from an hour ago to 24 hours ahead, keyed like
      * {@code wanted} (a channel id, or "n:" + display name).
      */
     private static Map<String, List<Channel.Airing>> readGuide(String url, Set<String> wanted) throws Exception {
-        long now = System.currentTimeMillis() / 1000L, from = now - 3600, to = now + 14 * 3600;
+        long now = System.currentTimeMillis() / 1000L, from = now - 3600, to = now + 24 * 3600;
         SimpleDateFormat fmt = new SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US);
         Map<String, String> idToKey = new HashMap<>();
         Map<String, List<Channel.Airing>> out = new HashMap<>();

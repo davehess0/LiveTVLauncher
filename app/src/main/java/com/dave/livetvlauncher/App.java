@@ -8,5 +8,6 @@ public final class App extends Application {
         super.onCreate();
         AppLog.init(this);
         Ui.applyTheme(new Prefs(this).theme());
+        Reminders.scheduleAll(this); // alarms don't survive a restart or an app update
     }
 }

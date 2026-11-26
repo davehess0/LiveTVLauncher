@@ -289,6 +289,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         Weather.get().refreshAlertsIfStale(this, alertsChanged);
         content.post(this::maybeShowAlert); // an alert that arrived while another screen was open
         content.post(this::maybeOfferHome); // first run: offer to make this the home screen
+        content.post(this::showMissedReminders);
         handler.removeCallbacks(ticker);
         handler.postDelayed(ticker, TICK_MS);
     }
@@ -437,6 +438,25 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
 
     boolean hasCameras() {
         return !prefs.cameras().isEmpty();
+    }
+
+    /** Full Guide: the program grid, up to 24 hours ahead. */
+    void openGrid() {
+        startActivity(new Intent(this, GridActivity.class));
+    }
+
+    /** A reminder whose pop-up couldn't open in time (e.g. another app was in front): show it now. */
+    private void showMissedReminders() {
+        if (!resumed) return;
+        for (Reminders.Reminder r : Reminders.missed(this)) {
+            startActivity(ReminderActivity.intent(this, r.key()));
+        }
+    }
+
+    /** The remote's Guide button opens the Full Guide. */
+    @Override public boolean onKeyDown(int keyCode, android.view.KeyEvent e) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_GUIDE) { openGrid(); return true; }
+        return super.onKeyDown(keyCode, e);
     }
 
     /** Launcher settings, behind the optional PIN so the restricted profile can't change them. */

@@ -91,6 +91,11 @@ public final class Apps {
 
     /** Play a channel the way Settings says to. Channel list is passed so CH+/CH- work in the player. */
     public static void play(Activity a, Channel ch, List<Channel> lineup) {
+        play(a, ch, lineup, 0);
+    }
+
+    /** As above; extraFlags are added to the built-in player's intent (e.g. to replace a player already open). */
+    public static void play(Activity a, Channel ch, List<Channel> lineup, int extraFlags) {
         Prefs p = new Prefs(a);
         p.setLastChannel(ch.number);
         switch (p.player()) {
@@ -112,7 +117,7 @@ public final class Apps {
                 }
                 // fall through to built-in
             default:
-                a.startActivity(PlayerActivity.intent(a, lineup, ch));
+                a.startActivity(PlayerActivity.intent(a, lineup, ch).addFlags(extraFlags));
         }
     }
 

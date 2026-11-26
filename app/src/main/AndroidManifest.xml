@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- In-app updates: hand a newer APK of this same app to Android's installer (you confirm on screen). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Full Guide "Remind me": an alarm a minute before the show starts (exact, so it's on time). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -82,6 +85,19 @@
             android:screenOrientation="landscape" />
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".AppsActivity" android:exported="false" />
+        <activity
+            android:name=".GridActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <!-- Reminder pop-up: its own task, so it floats over another app without bringing the home screen up. -->
+        <activity
+            android:name=".ReminderActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Reminder"
+            android:launchMode="singleTask"
+            android:taskAffinity=".reminder"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape" />
         <receiver android:name=".UpdateReceiver" android:exported="false" />
     </application>
 </manifest>
