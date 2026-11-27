@@ -89,10 +89,12 @@ public final class MediaStore {
     }
 
     /** Play a Jellyfin / Emby item in the built-in player. */
-    public static void open(Activity a, PlexClient.Item it) {
+    public static void open(Activity a, PlexClient.Item it, boolean fromStart) {
         Prefs p = new Prefs(a);
-        AppLog.i(sourceName(it.source), "Play in built-in player: " + it.title);
-        a.startActivity(PlayerActivity.mediaIntent(a, it, p.mediaUrl(it.source), p.mediaToken(it.source), p.mediaUserId(it.source)));
+        AppLog.i(sourceName(it.source), "Play in built-in player: " + it.title + (fromStart ? " (from the beginning)" : ""));
+        android.content.Intent i = PlayerActivity.mediaIntent(a, it, p.mediaUrl(it.source), p.mediaToken(it.source), p.mediaUserId(it.source));
+        if (fromStart) i.putExtra("startMs", 0L);
+        a.startActivity(i);
     }
 
     public static String sourceName(String kind) {

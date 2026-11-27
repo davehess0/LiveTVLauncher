@@ -60,16 +60,37 @@ public final class PlexStore {
     }
 
     /** Open a movie/episode: in the Plex app (deep link), or in the built-in player. */
-    public static void open(Activity a, PlexClient.Item it) {
-        if (!"plex".equals(it.source)) { MediaStore.open(a, it); return; } // Jellyfin / Emby
+    public static void open(Activity a, PlexClient.Item it) { open(a, it, false); }
+
+    /** fromStart: play from the beginning instead of resuming where it was left off. */
+    public static void open(Activity a, PlexClient.Item it, boolean fromStart) {
+        if (!"plex".equals(it.source)) { MediaStore.open(a, it, fromStart); return; } // Jellyfin / Emby
         Prefs p = new Prefs(a);
         if (Prefs.PLEX_BUILTIN.equals(p.plexPlayer()) && it.partKey != null) {
-            AppLog.i("Plex", "Play in built-in player: " + it.title);
-            a.startActivity(PlayerActivity.plexIntent(a, it, p.plexUrl(), p.plexToken()));
+            AppLog.i("Plex", "Play in built-in player: " + it.title + (fromStart ? " (from the beginning)" : ""));
+            Intent i = PlayerActivity.plexIntent(a, it, p.plexUrl(), p.plexToken());
+            if (fromStart) i.putExtra("startMs", 0L);
+            a.startActivity(i);
             return;
         }
-        AppLog.i("Plex", "Open in Plex app: " + it.title);
-        openInPlexApp(a, it.ratingKey, it.viewOffsetMs);
+        AppLog.i("Plex", "Open in Plex app: " + it.title + (fromStart ? " (from the beginning)" : ""));
+        openInPlexApp(a, it.ratingKey, fromStart ? 0 : it.viewOffsetMs);
+    }
+
+    /**
+     * OK on a poster: when it's partly watched, a menu with "Resume from 1:07:57" and "Start from the
+     * beginning"; otherwise just play it.
+     */
+    public static void choose(Activity a, android.view.View anchor, PlexClient.Item it) {
+        if (it.viewOffsetMs < 60_000L) { open(a, it, true); return; }
+        AppMenu.show(a, anchor, new String[]{"Resume from " + clock(it.viewOffsetMs), "Start from the beginning"},
+                new Runnable[]{() -> open(a, it, false), () -> open(a, it, true)});
+    }
+
+    private static String clock(long ms) {
+        long s = ms / 1000, h = s / 3600, m = s / 60 % 60;
+        return h > 0 ? String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s % 60)
+                : String.format(java.util.Locale.US, "%d:%02d", m, s % 60);
     }
 
     /**

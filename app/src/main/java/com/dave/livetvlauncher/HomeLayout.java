@@ -521,7 +521,7 @@ public abstract class HomeLayout {
             s2.setText(it.subtitle);
             col.addView(s2, Ui.lp(dp(posterWDp), -2));
             poster.setContentDescription(it.title);
-            poster.setOnClickListener(v -> PlexStore.open(host, it));
+            poster.setOnClickListener(v -> PlexStore.choose(host, poster, it));
             poster.setOnFocusChangeListener((v, has) -> {
                 Ui.lift(v, has, 1.08f);
                 if (has) host.setBackdrop(it.artUrl != null ? it.artUrl : it.posterUrl);

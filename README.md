@@ -115,7 +115,7 @@ Every layout can show the current weather next to the clock, for example ☁️ 
 Every layout now has a **Streaming** row of big app banners. By default it shows YouTube, Prime Video, Disney+ and Plex (and SmartTube, if it's installed). It only shows the apps that are allowed in the current profile.
 - **To add an app:** open **Apps**, hold OK on the app and choose **Add to Streaming row**.
 - **To move or remove an app:** hold OK on it in the Streaming row and choose **Move** (then ◀ ▶, and OK when done) or **Remove**.
-- **Plex rows:** *Continue watching* and *Recently added movies*, with posters.
+- **Plex rows:** *Continue watching* and *Recently added movies*, with posters. OK on something you've partly watched asks **Resume from 1:07:57** or **Start from the beginning** (Plex, Jellyfin and Emby).
   - **Channel Wall** shows them right under Streaming.
   - **Guide** shows them below the channel list.
   - **Simple** shows Continue watching only.
