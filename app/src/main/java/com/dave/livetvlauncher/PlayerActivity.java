@@ -502,6 +502,7 @@ public final class PlayerActivity extends Activity {
     // ---- Channel guide overlay (Up / Down while watching) ----
 
     private LinearLayout guide;
+    private TextView guideClock;
     private android.widget.ListView guideList;
     private final Runnable hideGuide = this::hideChannelGuide;
     private static final long GUIDE_IDLE_MS = 10_000;
@@ -553,6 +554,14 @@ public final class PlayerActivity extends Activity {
         guide.setVisibility(View.GONE);
         root.addView(guide, new FrameLayout.LayoutParams(Ui.dp(this, 520), -1, Gravity.START));
         buildGuideInfo(root);
+        // The time, top right (as in the Full Guide), on a dark pill so it reads over any picture.
+        guideClock = Ui.text(this, 20, Ui.TEXT, true);
+        guideClock.setPadding(Ui.dp(this, 16), Ui.dp(this, 6), Ui.dp(this, 16), Ui.dp(this, 6));
+        guideClock.setBackground(Ui.rounded(0x990A0A0C, Ui.dp(this, 18), 0, 0));
+        guideClock.setVisibility(View.GONE);
+        FrameLayout.LayoutParams gclp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        gclp.setMargins(0, Ui.dp(this, 18), Ui.dp(this, Ui.SIDE_DP), 0);
+        root.addView(guideClock, gclp);
     }
 
     // ---- Full Guide over the video (Guide button, or Right in the channel list) ----
@@ -705,6 +714,7 @@ public final class PlayerActivity extends Activity {
         ((ChannelGuideAdapter) guideList.getAdapter()).notifyDataSetChanged();
         guide.setVisibility(View.VISIBLE);
         if (guideInfo != null) { updateGuideInfo(index); guideInfo.setVisibility(View.VISIBLE); }
+        if (guideClock != null) { guideClock.setText(Ui.clock(prefs.clock24h())); guideClock.setVisibility(View.VISIBLE); }
         guideList.requestFocus();
         guideList.setSelectionFromTop(index, Ui.dp(this, 200)); // current channel, a little below the top
         bumpGuideTimer();
@@ -715,12 +725,14 @@ public final class PlayerActivity extends Activity {
         handler.removeCallbacks(hideGuide);
         guide.setVisibility(View.GONE);
         if (guideInfo != null) guideInfo.setVisibility(View.GONE);
+        if (guideClock != null) guideClock.setVisibility(View.GONE);
         view.requestFocus();
     }
 
     private boolean guideShowing() { return guide != null && guide.getVisibility() == View.VISIBLE; }
 
     private void bumpGuideTimer() {
+        if (guideClock != null) guideClock.setText(Ui.clock(prefs.clock24h()));
         handler.removeCallbacks(hideGuide);
         handler.postDelayed(hideGuide, GUIDE_IDLE_MS);
     }
