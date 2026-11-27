@@ -157,6 +157,7 @@ public final class WallLayout extends HomeLayout {
         k.progress = new Ui.ProgressLine(c, Ui.ACCENT);
         v.addView(k.progress, Ui.margins(Ui.lp(-1, dp(4)), 0, dp(10), 0, 0));
         v.setOnClickListener(x -> host.play(ch));
+        favoriteMenu(v, ch);
         v.setOnFocusChangeListener((x, has) -> {
             if (has) {
                 Channel.Airing a = ch.now(now());

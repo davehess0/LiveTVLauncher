@@ -472,6 +472,7 @@ public final class GuideLayout extends HomeLayout {
         }
 
         v.setOnClickListener(x -> host.play(ch));
+        favoriteMenu(v, ch);
         LinearLayout.LayoutParams lp = Ui.margins(Ui.lp(-1, -2), 0, 0, 0, dp(8));
         v.setLayoutParams(lp);
         r.view = v;

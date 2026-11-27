@@ -602,11 +602,33 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
-                if (down && e.getRepeatCount() == 0) choose();
+                // Press and release: watch / remind. Hold: favorites (IPTV channels).
+                if (down) {
+                    if (e.getRepeatCount() == 0) okDown = true;
+                    else if (okDown && (e.getFlags() & KeyEvent.FLAG_LONG_PRESS) != 0) { okDown = false; holdOk(); }
+                } else if (okDown) {
+                    okDown = false;
+                    choose();
+                }
                 return true;
             default:
                 return false;
         }
+    }
+
+    private boolean okDown;
+
+    /** Hold OK on an IPTV channel: Add to / Remove from favorites (they sort to the top of the IPTV channels). */
+    private void holdOk() {
+        Channel ch = channels.get(sel);
+        if (!ch.iptv) { choose(); return; }
+        View anchorView = selCell != null ? selCell : rowViews.get(sel);
+        AppMenu.show(host, anchorView, new String[]{ch.favorite ? "Remove from favorites" : "Add to favorites"},
+                new Runnable[]{() -> {
+                    boolean on = ChannelStore.get().toggleFavorite(host, ch);
+                    android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
+                            android.widget.Toast.LENGTH_SHORT).show();
+                }});
     }
 
     private int pageRows() {

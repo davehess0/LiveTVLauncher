@@ -10,7 +10,7 @@ public final class Channel {
     public String streamUrl = "";  // e.g. http://192.168.1.50:5004/auto/v5.1
     public String logoUrl;         // from the guide API, may be null
     public boolean hd;
-    public boolean favorite;
+    public boolean favorite;       // HDHomeRun: set in the HDHomeRun app; IPTV: starred here (Prefs.iptvFavorites)
     public boolean tunarr;         // from the Tunarr server rather than the antenna tuner
     public boolean iptv;           // from an IPTV (M3U) playlist
     public String group = "";      // IPTV group-title
@@ -25,8 +25,12 @@ public final class Channel {
     public String displayName() {
         if (!iptv) return name;
         String n = name.replaceFirst("^\\s*[A-Za-z]{2,3}\\s*[:|]\\s*", "").trim();
-        return n.isEmpty() ? name : n;
+        if (n.isEmpty()) n = name;
+        return favorite ? "★ " + n : n;
     }
+
+    /** What an IPTV favorite is remembered by: the playlist name (numbers can change between loads). */
+    public String favKey() { return name; }
 
     public static final class Airing {
         public long start;  // unix seconds
@@ -63,13 +67,13 @@ public final class Channel {
         return number.replaceAll("[^0-9]", "");
     }
 
-    /** Sort key so 2.1 < 4.1 < 10.1 < 41.3 (string sort would get this wrong); Tunarr, then IPTV, follow the antenna ones. */
+    /** Sort key so 2.1 < 4.1 < 10.1 < 41.3 (string sort would get this wrong); Tunarr, then IPTV (favorites first), follow the antenna ones. */
     public double sortKey() {
         try {
             String[] p = number.split("[.\\-]");
             double major = Double.parseDouble(p[0]);
             double minor = p.length > 1 ? Double.parseDouble(p[1]) : 0;
-            return (iptv ? 2e9 : tunarr ? 1e9 : 0) + major * 1000 + minor;
+            return (iptv ? (favorite ? 2e9 : 3e9) : tunarr ? 1e9 : 0) + major * 1000 + minor;
         } catch (Exception e) {
             return Double.MAX_VALUE;
         }

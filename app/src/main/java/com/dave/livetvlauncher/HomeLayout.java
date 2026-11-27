@@ -107,6 +107,29 @@ public abstract class HomeLayout {
         if (v instanceof TextView) ((TextView) v).setText(s);
     }
 
+    /**
+     * Hold OK on an IPTV channel: Add to / Remove from favorites. Favorites sort to the top of the
+     * IPTV channels; the list is rebuilt and focus goes back to the same channel.
+     */
+    protected void favoriteMenu(View v, Channel ch) {
+        v.setTag("ch:" + ch.number);
+        if (!ch.iptv) return;
+        v.setOnLongClickListener(x -> {
+            AppMenu.show(host, v, new String[]{ch.favorite ? "Remove from favorites" : "Add to favorites"},
+                    new Runnable[]{() -> {
+                        boolean on = ChannelStore.get().toggleFavorite(host, ch);
+                        android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
+                                android.widget.Toast.LENGTH_SHORT).show();
+                        // After the menu has closed and the list is rebuilt: back to the same channel.
+                        host.getWindow().getDecorView().postDelayed(() -> {
+                            View again = host.getWindow().getDecorView().findViewWithTag("ch:" + ch.number);
+                            if (again != null) again.requestFocus();
+                        }, 150);
+                    }});
+            return true;
+        });
+    }
+
     /** Logo image if the guide supplied one, else a number badge. */
     protected View logo(Channel ch, int wDp, int hDp, float badgeSp) {
         FrameLayout f = new FrameLayout(c);

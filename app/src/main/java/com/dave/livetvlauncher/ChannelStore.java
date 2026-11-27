@@ -44,7 +44,7 @@ public final class ChannelStore {
 
     /**
      * Favorites if the user wants them and any exist; otherwise everything.
-     * Tunarr and IPTV channels have no favorites (they're hand-picked already), so they always stay.
+     * Only HDHomeRun favorites count here; Tunarr and IPTV channels (hand-picked already) always stay.
      */
     public List<Channel> visible(Prefs prefs) {
         List<Channel> src = all;
@@ -52,7 +52,7 @@ public final class ChannelStore {
         List<Channel> fav = new ArrayList<>();
         boolean anyFavorite = false;
         for (Channel c : src) {
-            if (c.favorite) anyFavorite = true;
+            if (c.favorite && !c.iptv) anyFavorite = true;
             if (c.favorite || c.tunarr || c.iptv) fav.add(c);
         }
         return anyFavorite ? fav : src;
@@ -62,6 +62,23 @@ public final class ChannelStore {
         if (number == null) return null;
         for (Channel c : all) if (c.number.equals(number)) return c;
         return null;
+    }
+
+    /** Star or unstar an IPTV channel; the lists re-sort straight away. Returns true if it's now a favorite. */
+    public boolean toggleFavorite(Context ctx, Channel ch) {
+        Prefs p = new Prefs(ctx);
+        java.util.Set<String> favs = p.iptvFavorites();
+        boolean on = !favs.contains(ch.favKey());
+        if (on) favs.add(ch.favKey()); else favs.remove(ch.favKey());
+        p.setIptvFavorites(favs);
+        for (Channel c : all) if (c.iptv && c.favKey().equals(ch.favKey())) c.favorite = on;
+        ch.favorite = on;
+        List<Channel> sorted = new ArrayList<>(all);
+        java.util.Collections.sort(sorted, java.util.Comparator.comparingDouble(Channel::sortKey));
+        all = Collections.unmodifiableList(sorted);
+        AppLog.i("Channels", "IPTV " + ch.number + " " + (on ? "added to" : "removed from") + " favorites");
+        for (Listener l : new ArrayList<>(listeners)) l.onChannelsChanged();
+        return on;
     }
 
     public void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
@@ -84,6 +101,7 @@ public final class ChannelStore {
         final String tunarrUrl = prefs.tunarrUrl();
         final String iptvUrl = prefs.iptvUrl(), iptvGuide = prefs.iptvGuideUrl();
         final java.util.Set<String> hiddenGroups = prefs.iptvHiddenGroups();
+        final java.util.Set<String> iptvFavs = prefs.iptvFavorites();
         io.execute(() -> {
             try {
                 // Antenna tuner and Tunarr load independently, so either one still works if the other is down.
@@ -167,6 +185,7 @@ public final class ChannelStore {
                     iptvGroups = Collections.emptyList();
                 }
                 if (merged.isEmpty()) throw hdhrError != null ? hdhrError : new Exception("No channels found");
+                for (Channel c : merged) if (c.iptv) c.favorite = iptvFavs.contains(c.favKey());
                 java.util.Collections.sort(merged, java.util.Comparator.comparingDouble(Channel::sortKey));
                 all = Collections.unmodifiableList(merged);
                 status = hdhrStatus + tunarrStatus + iptvStatus;

@@ -194,6 +194,7 @@ You can change this in Settings → **Play channels with**:
 
 **IPTV channels:** in ⚙ Settings → **IPTV**, enter your provider's M3U / M3U8 playlist link (easiest from your phone, see above). An Xtream-style `get.php?username=…&password=…&type=m3u_plus` link works too.
 - Channels are listed after the antenna and Tunarr channels. They keep the playlist's `tvg-chno` number when it's free; otherwise they're numbered from 1000 up, in playlist order.
+- **Favorites:** hold OK on an IPTV channel (in the channel list or the Full Guide) and choose **Add to favorites**. Favorites get a ★ and move to the top of the IPTV channels; hold OK again to remove one. They're remembered by channel name, so they survive playlist reloads.
 - Guide: add an XMLTV link (plain or `.gz`) under **Guide (XMLTV)**, or leave it blank to use the guide the playlist names (`url-tvg`). Channels are matched by `tvg-id`, then by name. The guide is re-downloaded every 3 hours.
 - **Channel groups** lets you hide playlist groups (`group-title`) you don't want. **Hide all** clears every box so you can tick just the few you want (it turns into **Show all** to undo). At most 3,000 channels are loaded, so hide groups to trim a big provider list.
 - MPEG-TS streams get full pause and rewind. HLS (`.m3u8`), DASH, RTMP and RTSP streams play directly, and pause / rewind work within the stream's own live window. Formats the built-in player can't decode switch to VLC as usual.

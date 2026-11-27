@@ -121,6 +121,19 @@ public final class Prefs {
         sp.edit().putString("iptvHiddenGroups", new org.json.JSONArray(v).toString()).apply();
     }
 
+    /** IPTV channels starred as favorites (by Channel.favKey); they sort to the top of the IPTV channels. */
+    public java.util.Set<String> iptvFavorites() {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(sp.getString("iptvFavorites", "[]"));
+            for (int i = 0; i < a.length(); i++) out.add(a.getString(i));
+        } catch (Exception ignored) { }
+        return out;
+    }
+    public void setIptvFavorites(java.util.Set<String> v) {
+        sp.edit().putString("iptvFavorites", new org.json.JSONArray(v).toString()).apply();
+    }
+
     /** Tunarr server, e.g. http://192.168.1.50:8000; blank = not used. */
     public String tunarrUrl() { return sp.getString("tunarrUrl", ""); }
     public void setTunarrUrl(String v) { sp.edit().putString("tunarrUrl", v == null ? "" : v.trim()).apply(); }
