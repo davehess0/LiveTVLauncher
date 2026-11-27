@@ -59,6 +59,7 @@ public final class WallLayout extends HomeLayout {
                 Ui.margins(Ui.lpWeight(0, dp(150), 1), 0, 0, dp(24), 0));
         top.addView(sourceTile("Settings", null, Ui.SUB, "⚙", 18, v -> host.openSettings()),
                 Ui.lp(dp(130), dp(150)));
+        keepInRow(top);
         root.addView(top);
 
         recent = recentBox();

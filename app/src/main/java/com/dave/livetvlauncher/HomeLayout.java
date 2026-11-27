@@ -186,6 +186,28 @@ public abstract class HomeLayout {
     }
 
     /** Label for the current weather, placed just before the clock. Hidden until weather is set up. */
+    /**
+     * Left / Right stay in this row (a top bar of buttons): they move to the next item along it and
+     * stop at the ends, instead of dropping into the row below when there's nothing further along.
+     */
+    protected void keepInRow(android.view.ViewGroup row) {
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View v = row.getChildAt(i);
+            if (!v.isFocusable()) continue;
+            v.setOnKeyListener((view, code, e) -> {
+                boolean right = code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
+                if (!right && code != android.view.KeyEvent.KEYCODE_DPAD_LEFT) return false;
+                if (e.getAction() != android.view.KeyEvent.ACTION_DOWN) return true;
+                int dir = right ? 1 : -1;
+                for (int j = row.indexOfChild(view) + dir; j >= 0 && j < row.getChildCount(); j += dir) {
+                    View next = row.getChildAt(j);
+                    if (next.getVisibility() == View.VISIBLE && next.isFocusable()) { next.requestFocus(); return true; }
+                }
+                return true; // end of the row: stay put
+            });
+        }
+    }
+
     protected TextView weatherLabel(float sp) {
         TextView t = Ui.text(c, sp, Ui.TEXT, true);
         t.setPadding(dp(14), dp(6), dp(14), dp(6));

@@ -185,6 +185,7 @@ public final class GuideLayout extends HomeLayout {
         top.addView(weather, weatherLp());
         clock = Ui.text(c, 20, Ui.TEXT, true);
         top.addView(clock);
+        keepInRow(top);
         root.addView(top);
 
         // Streaming apps, same row as Channel Wall, with room above and below for a tile to grow.

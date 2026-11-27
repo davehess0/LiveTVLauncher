@@ -56,6 +56,7 @@ public final class SimpleLayout extends HomeLayout {
         if (host.hasCameras()) tiles.addView(sourceTile("Cameras", "Live view", Ui.LIVE_RED, "◉", ts,
                 v -> host.openCameras()), tileLp(1, false));
         tiles.addView(sourceTile("Apps", "Everything else", Ui.SUB, "▦", ts, v -> host.openApps()), tileLp(1, true));
+        keepInRow(tiles);
         root.addView(tiles, Ui.lp(-1, -2));
 
         LinearLayout lower = new LinearLayout(c);
