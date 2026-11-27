@@ -108,21 +108,38 @@ public abstract class HomeLayout {
     }
 
     /**
-     * Hold OK on an IPTV channel: Add to / Remove from favorites. Favorites sort to the top of the
+     * Hold OK on an IPTV channel: Remind me (for the next show) and Add to / Remove from favorites. Favorites sort to the top of the
      * IPTV channels; the list is rebuilt and focus goes back to the same channel.
      */
     protected void favoriteMenu(View v, Channel ch) {
         v.setTag("ch:" + ch.number);
         if (!ch.iptv) return;
         v.setOnLongClickListener(x -> {
-            AppMenu.show(host, v, new String[]{ch.favorite ? "Remove from favorites" : "Add to favorites"},
-                    new Runnable[]{() -> {
-                        boolean on = ChannelStore.get().toggleFavorite(host, ch);
-                        android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
-                                android.widget.Toast.LENGTH_SHORT).show();
-                        onFavoriteChanged(ch);
-                        v.requestFocus();
-                    }});
+            java.util.List<String> labels = new java.util.ArrayList<>();
+            java.util.List<Runnable> acts = new java.util.ArrayList<>();
+            // Remind me for what's on next (when the channel has a guide).
+            Channel.Airing next = ch.next(System.currentTimeMillis() / 1000L);
+            if (next != null) {
+                boolean set = Reminders.has(host, ch.number, next.start);
+                labels.add(set ? "Cancel reminder: " + next.title
+                        : "Remind me: " + next.title + " at " + GuideGrid.time(host, next.start));
+                acts.add(() -> {
+                    if (set) Reminders.remove(host, ch.number, next.start);
+                    else Reminders.add(host, ch, next);
+                    android.widget.Toast.makeText(host, set ? "Reminder cancelled"
+                            : "We'll remind you a minute before " + next.title + " starts", android.widget.Toast.LENGTH_SHORT).show();
+                    v.requestFocus();
+                });
+            }
+            labels.add(ch.favorite ? "Remove from favorites" : "Add to favorites");
+            acts.add(() -> {
+                boolean on = ChannelStore.get().toggleFavorite(host, ch);
+                android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
+                        android.widget.Toast.LENGTH_SHORT).show();
+                onFavoriteChanged(ch);
+                v.requestFocus();
+            });
+            AppMenu.show(host, v, labels.toArray(new String[0]), acts.toArray(new Runnable[0]));
             return true;
         });
     }

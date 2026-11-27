@@ -625,14 +625,28 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
     private void holdOk() {
         Channel ch = channels.get(sel);
         if (!ch.iptv) { choose(); return; }
+        Channel.Airing a = selShow;
+        long now = nowSec();
+        boolean later = a != null && !noGuide.contains(a) && a.start > now;
+        List<String> labels = new ArrayList<>();
+        List<Runnable> acts = new ArrayList<>();
+        if (later) {
+            // A show that hasn't started: Remind me / Watch now, as with a short press.
+            boolean reminder = Reminders.has(host, ch.number, a.start);
+            labels.add(reminder ? "Cancel reminder" : "Remind me");
+            acts.add(() -> toggleReminder(ch, a));
+            labels.add("Watch " + ch.number + " now");
+            acts.add(() -> watch(ch));
+        }
+        labels.add(ch.favorite ? "Remove from favorites" : "Add to favorites");
+        acts.add(() -> {
+            boolean on = ChannelStore.get().toggleFavorite(host, ch);
+            android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
+                    android.widget.Toast.LENGTH_SHORT).show();
+            rebuild(true, new ArrayList<>(channels)); // same order: just the ★ changes
+        });
         View anchorView = selCell != null ? selCell : rowViews.get(sel);
-        AppMenu.show(host, anchorView, new String[]{ch.favorite ? "Remove from favorites" : "Add to favorites"},
-                new Runnable[]{() -> {
-                    boolean on = ChannelStore.get().toggleFavorite(host, ch);
-                    android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
-                            android.widget.Toast.LENGTH_SHORT).show();
-                    rebuild(true, new ArrayList<>(channels)); // same order: just the ★ changes
-                }});
+        AppMenu.show(host, anchorView, labels.toArray(new String[0]), acts.toArray(new Runnable[0]));
     }
 
     private int pageRows() {
@@ -649,16 +663,19 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
         View anchorView = selCell != null ? selCell : rowViews.get(sel);
         AppMenu.show(host, anchorView,
                 new String[]{reminder ? "Cancel reminder" : "Remind me", "Watch " + ch.number + " now"},
-                new Runnable[]{() -> {
-                    if (reminder) Reminders.remove(host, ch.number, a.start);
-                    else Reminders.add(host, ch, a);
-                    android.widget.Toast.makeText(host, reminder ? "Reminder cancelled"
-                            : "We'll remind you a minute before " + a.title + " starts", android.widget.Toast.LENGTH_SHORT).show();
-                    loadReminders();
-                    drawStrip(sel);
-                    highlight();
-                    showDetails();
-                }, () -> watch(ch)});
+                new Runnable[]{() -> toggleReminder(ch, a), () -> watch(ch)});
+    }
+
+    private void toggleReminder(Channel ch, Channel.Airing a) {
+        boolean reminder = Reminders.has(host, ch.number, a.start);
+        if (reminder) Reminders.remove(host, ch.number, a.start);
+        else Reminders.add(host, ch, a);
+        android.widget.Toast.makeText(host, reminder ? "Reminder cancelled"
+                : "We'll remind you a minute before " + a.title + " starts", android.widget.Toast.LENGTH_SHORT).show();
+        loadReminders();
+        drawStrip(sel);
+        highlight();
+        showDetails();
     }
 
     private void watch(Channel ch) {
