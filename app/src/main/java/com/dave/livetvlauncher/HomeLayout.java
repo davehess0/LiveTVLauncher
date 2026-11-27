@@ -120,11 +120,6 @@ public abstract class HomeLayout {
                         boolean on = ChannelStore.get().toggleFavorite(host, ch);
                         android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
                                 android.widget.Toast.LENGTH_SHORT).show();
-                        // After the menu has closed and the list is rebuilt: back to the same channel.
-                        host.getWindow().getDecorView().postDelayed(() -> {
-                            View again = host.getWindow().getDecorView().findViewWithTag("ch:" + ch.number);
-                            if (again != null) again.requestFocus();
-                        }, 150);
                     }});
             return true;
         });

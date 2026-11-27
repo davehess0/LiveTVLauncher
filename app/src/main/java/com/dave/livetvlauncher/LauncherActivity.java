@@ -328,8 +328,33 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         if (current == null) return;
         View focused = getCurrentFocus();
         boolean hadFocus = focused != null;
+        // A channel row had focus (e.g. one just starred as a favorite): stay on it, at the same place on screen.
+        Object tag = focused != null ? focused.getTag() : null;
+        int[] at = new int[2];
+        if (focused != null) focused.getLocationOnScreen(at);
         current.bind(visibleChannels(), ChannelStore.get().status());
+        if (tag instanceof String && ((String) tag).startsWith("ch:")) {
+            View again = getWindow().getDecorView().findViewWithTag(tag);
+            if (again != null && again.requestFocus()) { keepOnScreen(again, at[1]); return; }
+        }
         if (!hadFocus || getCurrentFocus() == null) current.focusDefault();
+    }
+
+    /** After the next layout, scroll so the view sits at the same height on screen as before. */
+    private void keepOnScreen(View v, int oldY) {
+        v.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                v.getViewTreeObserver().removeOnPreDrawListener(this);
+                android.view.ViewParent p = v.getParent();
+                while (p != null && !(p instanceof android.widget.ScrollView)) p = p.getParent();
+                if (p == null) return true;
+                int[] now = new int[2];
+                v.getLocationOnScreen(now);
+                if (now[1] == oldY) return true;
+                ((android.widget.ScrollView) p).scrollBy(0, now[1] - oldY);
+                return false; // draw again at the corrected position
+            }
+        });
     }
 
     private final ChannelStore.Listener plexListener = () -> {
