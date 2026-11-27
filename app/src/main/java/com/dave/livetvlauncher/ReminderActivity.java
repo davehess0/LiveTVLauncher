@@ -95,7 +95,7 @@ public final class ReminderActivity extends Activity {
         title.setPadding(0, Ui.dp(this, 6), 0, 0);
         card.addView(title);
         TextView meta = Ui.text(this, 15, Ui.SUB, false);
-        meta.setText(r.channel + "  " + r.channelName + "  ·  " + GridActivity.time(this, r.start)
+        meta.setText(r.channel + "  " + r.channelName + "  ·  " + GuideGrid.time(this, r.start)
                 + (r.episode.isEmpty() ? "" : "  ·  " + r.episode));
         meta.setMaxLines(2);
         meta.setEllipsize(android.text.TextUtils.TruncateAt.END);

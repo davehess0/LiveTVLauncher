@@ -335,6 +335,7 @@ public final class PlayerActivity extends Activity {
 
         buildTouchControls(root);
         if (!plexMode) buildChannelGuide(root);
+        if (!plexMode) buildFullGuide(root);
         setContentView(root);
     }
 
@@ -435,10 +436,15 @@ public final class PlayerActivity extends Activity {
         if (!plexMode) {
             // Top right: channel list, and jump back to live.
             TextView list = touchButton("☰  Channels", 16, 56, x -> showChannelGuide());
-            FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(-2, Ui.dp(this, 56), Gravity.TOP | Gravity.END);
-            llp.setMargins(0, Ui.dp(this, 28), Ui.dp(this, 24), 0);
+            TextView grid = touchButton("▦  Guide", 16, 56, x -> showFullGuide(nums[index]));
+            LinearLayout topRight = new LinearLayout(this);
             list.setPadding(Ui.dp(this, 22), 0, Ui.dp(this, 22), 0);
-            controls.addView(list, llp);
+            grid.setPadding(Ui.dp(this, 22), 0, Ui.dp(this, 22), 0);
+            topRight.addView(grid, Ui.margins(Ui.lp(-2, Ui.dp(this, 56)), 0, 0, Ui.dp(this, 12), 0));
+            topRight.addView(list, Ui.lp(-2, Ui.dp(this, 56)));
+            FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+            llp.setMargins(0, Ui.dp(this, 28), Ui.dp(this, 24), 0);
+            controls.addView(topRight, llp);
             liveBtn = touchButton("● LIVE", 15, 48, x -> seekBy(24L * 3600_000));
             liveBtn.setTextColor(Ui.LIVE_RED);
             FrameLayout.LayoutParams lvp = new FrameLayout.LayoutParams(-2, Ui.dp(this, 48), Gravity.TOP | Gravity.END);
@@ -489,6 +495,7 @@ public final class PlayerActivity extends Activity {
 
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent e) {
         if (guideShowing()) bumpGuideTimer(); // scrolling the channel list keeps it open
+        if (fullGuideShowing()) bumpFullGuideTimer();
         return super.dispatchTouchEvent(e);
     }
 
@@ -539,9 +546,68 @@ public final class PlayerActivity extends Activity {
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
         guide.addView(guideList, new LinearLayout.LayoutParams(-1, 0, 1));
+        TextView more = Ui.text(this, 14, Ui.SUB, true);
+        more.setText("▶  Full Guide");
+        more.setPadding(p + Ui.dp(this, 8), Ui.dp(this, 10), 0, 0);
+        guide.addView(more);
         guide.setVisibility(View.GONE);
         root.addView(guide, new FrameLayout.LayoutParams(Ui.dp(this, 520), -1, Gravity.START));
         buildGuideInfo(root);
+    }
+
+    // ---- Full Guide over the video (Guide button, or Right in the channel list) ----
+
+    private GuideGrid fullGuide;
+    private final Runnable hideFullGuideRun = this::hideFullGuide;
+    private static final long FULL_GUIDE_IDLE_MS = 60_000;
+    private boolean fullGuideCloseArmed;
+
+    private void buildFullGuide(FrameLayout root) {
+        fullGuide = new GuideGrid(this, true, this::watchFromFullGuide);
+        fullGuide.setVisibility(View.GONE);
+        root.addView(fullGuide, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void showFullGuide(String channel) {
+        if (fullGuide == null) return;
+        hideChannelGuide();
+        banner.animate().alpha(0f).setDuration(150).start();
+        if (controls != null) { handler.removeCallbacks(hideControls); controls.setVisibility(View.GONE); }
+        fullGuideCloseArmed = false;
+        fullGuide.setVisibility(View.VISIBLE);
+        fullGuide.start();
+        fullGuide.selectChannel(channel);
+        bumpFullGuideTimer();
+        AppLog.i("Player", "Full Guide opened on " + channel);
+    }
+
+    private void hideFullGuide() {
+        if (!fullGuideShowing()) return;
+        handler.removeCallbacks(hideFullGuideRun);
+        fullGuide.stop();
+        fullGuide.setVisibility(View.GONE);
+        view.requestFocus();
+    }
+
+    private boolean fullGuideShowing() { return fullGuide != null && fullGuide.getVisibility() == View.VISIBLE; }
+
+    private void bumpFullGuideTimer() {
+        handler.removeCallbacks(hideFullGuideRun);
+        handler.postDelayed(hideFullGuideRun, FULL_GUIDE_IDLE_MS);
+    }
+
+    /** OK in the Full Guide on something on now (or Watch now): tune it here, in the player. */
+    private void watchFromFullGuide(Channel ch) {
+        hideFullGuide();
+        for (int i = 0; i < nums.length; i++) {
+            if (nums[i].equals(ch.number)) {
+                if (i != index) tune(i, true); else showBanner();
+                return;
+            }
+        }
+        // Not in this player's lineup (e.g. favorites only): open it fresh.
+        Apps.play(this, ch, ChannelStore.get().visible(prefs));
+        finish();
     }
 
     // ---- What's-on panel on the right of the channel list ----
@@ -667,14 +733,36 @@ public final class PlayerActivity extends Activity {
             if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) toggleSubtitles();
             return true;
         }
+        if (fullGuideShowing()) {
+            bumpFullGuideTimer();
+            if (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_GUIDE) {
+                // Only a press made while it's open closes it (not the release of the press that opened it).
+                if (e.getAction() == KeyEvent.ACTION_DOWN) fullGuideCloseArmed = true;
+                else if (e.getAction() == KeyEvent.ACTION_UP && fullGuideCloseArmed) hideFullGuide();
+                return true;
+            }
+            if (fullGuide.handleKey(e)) return true;
+            // Volume still works; nothing else reaches the player underneath.
+            if (k == KeyEvent.KEYCODE_VOLUME_UP || k == KeyEvent.KEYCODE_VOLUME_DOWN || k == KeyEvent.KEYCODE_VOLUME_MUTE)
+                return super.dispatchKeyEvent(e);
+            return true;
+        }
         if (guideShowing()) {
             bumpGuideTimer();
             if (e.getKeyCode() == KeyEvent.KEYCODE_BACK) {
                 if (e.getAction() == KeyEvent.ACTION_UP) hideChannelGuide();
                 return true;
             }
-            // Left / Right close the list without changing anything.
-            if (e.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT || e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            // Right: the Full Guide, on the channel you're hovered over.
+            if (k == KeyEvent.KEYCODE_DPAD_RIGHT || k == KeyEvent.KEYCODE_GUIDE) {
+                if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                    int pos = guideList.getSelectedItemPosition();
+                    showFullGuide(nums[pos >= 0 && pos < nums.length ? pos : index]);
+                }
+                return true;
+            }
+            // Left closes the list without changing anything.
+            if (k == KeyEvent.KEYCODE_DPAD_LEFT) {
                 if (e.getAction() == KeyEvent.ACTION_UP) hideChannelGuide();
                 return true;
             }
@@ -1133,6 +1221,7 @@ public final class PlayerActivity extends Activity {
     /** Release the player (and the tuner) whenever we're not on screen. */
     @Override protected void onStop() {
         handler.removeCallbacksAndMessages(null);
+        if (fullGuideShowing()) { fullGuide.stop(); fullGuide.setVisibility(View.GONE); }
         if (plexMode) {
             reportPlex("stopped");
             if (player != null || vlc != null) plexStartMs = posMs() + 5000; // resume here if reopened
@@ -1594,7 +1683,7 @@ public final class PlayerActivity extends Activity {
                 toggleSubtitles();
                 return true;
             case KeyEvent.KEYCODE_GUIDE:
-                finish(); // back to the home screen guide
+                showFullGuide(nums[index]); // what's on later, over the video
                 return true;
             default:
                 return super.onKeyDown(keyCode, event);
