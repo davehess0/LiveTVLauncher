@@ -53,6 +53,45 @@ public final class Apps {
         a.startActivity(i);
     }
 
+    /**
+     * True only inside an Android restricted profile. Such a profile is never the device's main user
+     * and always has "modify accounts" blocked; Android's own isRestrictedProfile() is checked first
+     * where the system allows it.
+     */
+    public static boolean isRestrictedProfile(Context c) {
+        android.os.UserManager um = (android.os.UserManager) c.getSystemService(Context.USER_SERVICE);
+        if (um == null) return false;
+        try {
+            Object r = android.os.UserManager.class.getMethod("isRestrictedProfile").invoke(um);
+            if (r instanceof Boolean) return (Boolean) r;
+        } catch (Throwable ignored) {
+            // Hidden on this Android version: fall back to the profile's restrictions.
+        }
+        return !um.isSystemUser() && um.getUserRestrictions().getBoolean(android.os.UserManager.DISALLOW_MODIFY_ACCOUNTS, false);
+    }
+
+    /**
+     * Leaving the restricted profile is done by Android itself (it asks for the profile PIN), so open
+     * the screen that has it: Settings › Security & restrictions › Exit restricted profile.
+     */
+    public static void exitRestrictedProfile(Activity a) {
+        AppLog.i("App", "Exit restricted profile: opening Security & restrictions");
+        String where = "Choose Exit restricted profile, then enter the PIN.";
+        for (String action : new String[]{Settings.ACTION_SECURITY_SETTINGS, Settings.ACTION_SETTINGS}) {
+            try {
+                a.startActivity(new Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                Toast.makeText(a, Settings.ACTION_SETTINGS.equals(action)
+                        ? "Go to Device Preferences › Security & restrictions › Exit restricted profile, then enter the PIN."
+                        : where, Toast.LENGTH_LONG).show();
+                return;
+            } catch (ActivityNotFoundException | SecurityException e) {
+                // Try the next screen.
+            }
+        }
+        Toast.makeText(a, "Android's Settings aren't available here. On the remote, open Settings › Device Preferences › "
+                + "Security & restrictions › Exit restricted profile.", Toast.LENGTH_LONG).show();
+    }
+
     public static void openSystemSettings(Activity a) {
         try {
             a.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

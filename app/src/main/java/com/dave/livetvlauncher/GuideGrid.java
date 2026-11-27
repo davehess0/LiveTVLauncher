@@ -144,12 +144,16 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
             TextView label = Ui.text(host, 15, Ui.TEXT, true);
             label.setText("Guide");
             head.addView(label);
-            clock = Ui.text(host, 15, Ui.SUB, false);
-            clock.setPadding(Ui.dp(host, 12), 0, 0, 0);
-            head.addView(clock);
             box.addView(head);
             box.addView(details);
             top.addView(box, new FrameLayout.LayoutParams(Math.round(dm.widthPixels * 0.62f), -1));
+            // The time, top right like the full-screen guide; on a dark pill so it reads over any picture.
+            clock = Ui.text(host, 20, Ui.TEXT, true);
+            clock.setPadding(Ui.dp(host, 16), Ui.dp(host, 6), Ui.dp(host, 16), Ui.dp(host, 6));
+            clock.setBackground(Ui.rounded(0x990A0A0C, Ui.dp(host, 18), 0, 0));
+            FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+            clp.setMargins(0, Ui.dp(host, 18), side, 0);
+            top.addView(clock, clp);
             root.addView(top, Ui.lp(-1, Math.round(dm.heightPixels * 0.36f)));
 
             panel = new LinearLayout(host);

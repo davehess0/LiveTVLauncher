@@ -170,6 +170,9 @@ public final class SettingsActivity extends Activity {
             });
             row("Log", "Today's events and errors · kept " + AppLog.KEEP_DAYS + " days", v -> showLog());
             row("Android settings", "Wi-Fi, display, sound" + (isRestrictedProfile() ? ", restricted profile" : ""), v -> Apps.openSystemSettings(this));
+            // Only in a restricted profile: the way back out (Android asks for the profile PIN).
+            if (isRestrictedProfile())
+                row("Exit restricted profile", "Needs the profile PIN", v -> Apps.exitRestrictedProfile(this));
         });
 
         TextView about = Ui.text(this, 14, Ui.SUB, false);
@@ -518,22 +521,7 @@ public final class SettingsActivity extends Activity {
                 .show();
     }
 
-    /**
-     * True only inside an Android restricted profile. Such a profile is never the device's main user
-     * and always has "modify accounts" blocked; Android's own isRestrictedProfile() is checked first
-     * where the system allows it.
-     */
-    private boolean isRestrictedProfile() {
-        android.os.UserManager um = (android.os.UserManager) getSystemService(USER_SERVICE);
-        if (um == null) return false;
-        try {
-            Object r = android.os.UserManager.class.getMethod("isRestrictedProfile").invoke(um);
-            if (r instanceof Boolean) return (Boolean) r;
-        } catch (Throwable ignored) {
-            // Hidden on this Android version: fall back to the profile's restrictions.
-        }
-        return !um.isSystemUser() && um.getUserRestrictions().getBoolean(android.os.UserManager.DISALLOW_MODIFY_ACCOUNTS, false);
-    }
+    private boolean isRestrictedProfile() { return Apps.isRestrictedProfile(this); }
 
     /** Just the host, so playlist links with a username / password in them aren't shown on the TV. */
     private static String shortUrl(String u) {
