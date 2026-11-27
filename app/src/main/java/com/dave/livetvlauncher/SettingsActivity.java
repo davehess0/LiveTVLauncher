@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -12,92 +13,251 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-/** Launcher settings. Click a row to cycle its value. */
+/**
+ * Launcher settings, two panes (like Apple TV): categories on the left, the selected category's
+ * settings on the right. Moving through the categories shows each one straight away; Right or OK
+ * goes into it, Left or Back comes back out. Click a row to change it.
+ */
 public final class SettingsActivity extends Activity {
     private Prefs prefs;
+    /** The right pane: the selected category's rows. */
     private LinearLayout list;
+    private ScrollView pane;
+
+    private static final String HOME = "Home screen", PLAYBACK = "Playback", SOURCES = "Sources",
+            CAMERAS = "Cameras", WEATHER = "Weather", SYSTEM = "System";
+    private static final String[][] CATEGORIES = {
+            {HOME, "▦"}, {PLAYBACK, "▶"}, {SOURCES, "☰"}, {CAMERAS, "◉"}, {WEATHER, "◐"}, {SYSTEM, "⚙"}};
+    private String category = HOME;
+    private final java.util.Map<String, View> catViews = new java.util.LinkedHashMap<>();
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = new Prefs(this);
         getWindow().setBackgroundDrawable(Ui.pageBackground());
-        ScrollView sv = Ui.pageScroller(this);
-        sv.setClipChildren(false);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setClipChildren(false);
+
+        // Left: the categories.
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+        left.setClipChildren(false);
+        left.setClipToPadding(false);
+        left.setBackgroundColor(0x14FFFFFF);
+        left.setPadding(Ui.dp(this, 36), Ui.dp(this, 36), Ui.dp(this, 24), Ui.dp(this, 28));
+        TextView title = Ui.text(this, 28, Ui.TEXT, true);
+        title.setText("Settings");
+        title.setPadding(Ui.dp(this, 14), 0, 0, Ui.dp(this, 20));
+        left.addView(title);
+        for (String[] c : CATEGORIES) left.addView(categoryRow(c[0], c[1]), Ui.margins(Ui.lp(-1, Ui.dp(this, 56)), 0, 0, 0, Ui.dp(this, 6)));
+        left.addView(new View(this), Ui.lpWeight(-1, 0, 1));
+        TextView about = Ui.text(this, 13, Ui.SUB, false);
+        about.setSingleLine(false);
+        about.setMaxLines(2);
+        about.setText("Live TV Home " + Updater.currentVersion(this) + "\nNo ads, no tracking, no accounts.");
+        about.setPadding(Ui.dp(this, 14), 0, 0, 0);
+        left.addView(about);
+        root.addView(left, Ui.lp(Ui.dp(this, 340), -1));
+
+        // Right: the selected category.
+        pane = Ui.pageScroller(this);
+        pane.setClipChildren(false);
         list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setClipChildren(false);
-        int p = Ui.dp(this, 48);
-        list.setPadding(p * 3, p / 2, p * 3, Math.max(p, Ui.dp(this, Ui.SCROLL_CLEAR_DP + 8)));
-        sv.addView(list);
-        setContentView(sv);
+        list.setClipToPadding(false);
+        list.setPadding(Ui.dp(this, 48), Ui.dp(this, 36), Ui.dp(this, 56), Ui.dp(this, Ui.SCROLL_CLEAR_DP + 8));
+        pane.addView(list);
+        root.addView(pane, Ui.lpWeight(0, -1, 1));
+
+        setContentView(root);
         render();
+        View first = catViews.get(category);
+        if (first != null) first.post(first::requestFocus);
     }
 
-    /** Groups currently opened (kept while this screen is open). */
+    // ---- Left pane ----
+
+    private View categoryRow(String name, String glyph) {
+        LinearLayout r = new LinearLayout(this);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(Ui.dp(this, 14), 0, Ui.dp(this, 14), 0);
+        float rad = Ui.dp(this, 14);
+        // At rest nothing; the open category keeps a soft fill; focused: the usual glow.
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_focused}, Ui.focusedGlass(this, rad));
+        bg.addState(new int[]{android.R.attr.state_selected}, Ui.glass(this, Ui.CARD, rad, false));
+        bg.addState(new int[]{}, new android.graphics.drawable.ColorDrawable(0));
+        r.setBackground(bg);
+        r.setFocusable(true);
+        r.setClickable(true);
+        TextView g = Ui.text(this, 18, Ui.SUB, true);
+        g.setText(glyph);
+        g.setGravity(Gravity.CENTER);
+        r.addView(g, Ui.lp(Ui.dp(this, 30), -2));
+        TextView l = Ui.text(this, 18, Ui.TEXT, true);
+        l.setText(name);
+        l.setPadding(Ui.dp(this, 12), 0, 0, 0);
+        r.addView(l);
+        r.setOnFocusChangeListener((v, has) -> {
+            Ui.lift(v, has, 1.0f);
+            // Moving through the categories shows each one straight away. (Not while the pane is
+            // being rebuilt: removing the focused row briefly hands focus to a category.)
+            if (has && !rendering && !name.equals(category)) {
+                category = name;
+                expanded.clear();
+                pane.scrollTo(0, 0);
+                render();
+            }
+        });
+        r.setOnClickListener(v -> focusPane());
+        r.setOnKeyListener((v, code, e) -> {
+            if (code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (e.getAction() == KeyEvent.ACTION_DOWN) focusPane();
+                return true;
+            }
+            return code == KeyEvent.KEYCODE_DPAD_LEFT; // nothing further left
+        });
+        catViews.put(name, r);
+        return r;
+    }
+
+    /** Into the right pane: its first row. */
+    private void focusPane() {
+        for (int i = 0; i < list.getChildCount(); i++) {
+            View c = list.getChildAt(i);
+            if (c.isFocusable()) { c.requestFocus(); return; }
+        }
+    }
+
+    private void focusCategory() {
+        View c = catViews.get(category);
+        if (c != null) c.requestFocus();
+    }
+
+    @Override public void onBackPressed() {
+        View f = getCurrentFocus();
+        if (f != null && f.getParent() == list) { focusCategory(); return; }
+        super.onBackPressed();
+    }
+
+    // ---- Right pane ----
+
+    /** Groups currently opened (Sources: one at a time, kept while this screen is open). */
     private final java.util.Set<String> expanded = new java.util.HashSet<>();
     private boolean inGroup;
+    private boolean rendering;
 
-    /** Rebuilds the list, keeping focus on the same row (rows are found by their label). */
+    /** Rebuilds the right pane, keeping focus on the same row (rows are found by their label). */
     private void render() {
         View f = getCurrentFocus();
-        Object keep = f != null ? f.getTag() : null;
+        Object keep = f != null && f.getParent() == list ? f.getTag() : null;
+        rendering = true;
         list.removeAllViews();
-        TextView title = Ui.text(this, 28, Ui.TEXT, true);
-        title.setText("Launcher settings");
-        title.setPadding(0, 0, 0, Ui.dp(this, 20));
-        list.addView(title);
+        for (java.util.Map.Entry<String, View> e : catViews.entrySet()) e.getValue().setSelected(e.getKey().equals(category));
 
+        switch (category) {
+            case HOME: renderHome(); break;
+            case PLAYBACK: renderPlayback(); break;
+            case SOURCES: renderSources(); break;
+            case CAMERAS: renderCameras(); break;
+            case WEATHER: renderWeather(); break;
+            default: renderSystem(); break;
+        }
+
+        if (keep != null) {
+            View target = list.findViewWithTag(keep);
+            if (target == null) target = firstRow();
+            if (target != null) target.requestFocus();
+        }
+        rendering = false;
+    }
+
+    private View firstRow() {
+        for (int i = 0; i < list.getChildCount(); i++) if (list.getChildAt(i).isFocusable()) return list.getChildAt(i);
+        return null;
+    }
+
+    private void heading(String section, String title) {
+        TextView s = Ui.text(this, 13, Ui.SUB, true);
+        s.setText(section.toUpperCase(java.util.Locale.US));
+        s.setLetterSpacing(0.08f);
+        list.addView(s);
+        TextView t = Ui.text(this, 24, Ui.TEXT, true);
+        t.setText(title);
+        t.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 18));
+        list.addView(t);
+    }
+
+    private void renderHome() {
+        heading(HOME, "How the home screen looks");
+        row("Home screen layout", layoutName(prefs.layout()), v -> {
+            String l = prefs.layout();
+            prefs.setLayout(Prefs.LAYOUT_GUIDE.equals(l) ? Prefs.LAYOUT_WALL
+                    : Prefs.LAYOUT_WALL.equals(l) ? Prefs.LAYOUT_SIMPLE : Prefs.LAYOUT_GUIDE);
+            render();
+        });
+        row("Colors", Ui.themeName(prefs.theme()), v -> {
+            String[] all = Ui.THEMES;
+            int i = java.util.Arrays.asList(all).indexOf(prefs.theme());
+            String next = all[(i + 1) % all.length];
+            prefs.setTheme(next);
+            Ui.applyTheme(next);
+            getWindow().setBackgroundDrawable(Ui.pageBackground());
+            render();
+        });
+        row("Streaming row", "Hold OK on an app to add, move or remove it",
+                v -> startActivity(new android.content.Intent(this, AppsActivity.class)));
+        row("Apps row on Channel Wall", prefs.showAppRow() ? "Shown" : "Hidden", v -> {
+            prefs.setShowAppRow(!prefs.showAppRow());
+            render();
+        });
+        row("Clock", prefs.clock24h() ? "24-hour" : "12-hour", v -> {
+            prefs.setClock24h(!prefs.clock24h());
+            render();
+        });
+        row("Live preview in the guide", prefs.livePreview() ? "On (uses a tuner while showing)" : "Off", v -> {
+            prefs.setLivePreview(!prefs.livePreview());
+            render();
+        });
+    }
+
+    private void renderPlayback() {
+        heading(PLAYBACK, "Watching TV");
+        row("Play channels with", playerName(prefs.player()), v -> {
+            String pl = prefs.player();
+            prefs.setPlayer(Prefs.PLAYER_BUILTIN.equals(pl) ? Prefs.PLAYER_EXTERNAL
+                    : Prefs.PLAYER_EXTERNAL.equals(pl) ? Prefs.PLAYER_HDHR_APP : Prefs.PLAYER_BUILTIN);
+            render();
+        });
+        row("When the app opens", prefs.startOnLastChannel() ? "Play the last channel" : "Show the home screen", v -> {
+            prefs.setStartOnLastChannel(!prefs.startOnLastChannel());
+            render();
+        });
+        row("Subtitles / captions", prefs.subtitles() ? "On (hold OK while watching to turn on / off)" : "Off", v -> {
+            prefs.setSubtitles(!prefs.subtitles());
+            render();
+        });
+    }
+
+    /** Status dots: working, set up but not loading, or off. */
+    private static final int DOT_OK = 0xFF4CAF50, DOT_WARN = 0xFFF5A623, DOT_OFF = 0xFF8A9099;
+
+    private void renderSources() {
+        heading(SOURCES, "Live TV and media servers");
         row("Set up from your phone", "Scan a QR code to enter addresses on your phone", v -> showPhoneSetup());
-        group("Home screen", layoutName(prefs.layout()) + " · " + Ui.themeName(prefs.theme()), () -> {
-            row("Home screen layout", layoutName(prefs.layout()), v -> {
-                String l = prefs.layout();
-                prefs.setLayout(Prefs.LAYOUT_GUIDE.equals(l) ? Prefs.LAYOUT_WALL
-                        : Prefs.LAYOUT_WALL.equals(l) ? Prefs.LAYOUT_SIMPLE : Prefs.LAYOUT_GUIDE);
-                render();
-            });
-            row("Streaming row", "Hold OK on an app to add, move or remove it",
-                    v -> startActivity(new android.content.Intent(this, AppsActivity.class)));
-            row("Apps row on Channel Wall", prefs.showAppRow() ? "Shown" : "Hidden", v -> {
-                prefs.setShowAppRow(!prefs.showAppRow());
-                render();
-            });
-            row("Colors", Ui.themeName(prefs.theme()), v -> {
-                String[] all = Ui.THEMES;
-                int i = java.util.Arrays.asList(all).indexOf(prefs.theme());
-                String next = all[(i + 1) % all.length];
-                prefs.setTheme(next);
-                Ui.applyTheme(next);
-                getWindow().setBackgroundDrawable(Ui.pageBackground());
-                render();
-            });
-            row("Clock", prefs.clock24h() ? "24-hour" : "12-hour", v -> {
-                prefs.setClock24h(!prefs.clock24h());
-                render();
-            });
-        });
-        group("Playback", playerName(prefs.player()), () -> {
-            row("Play channels with", playerName(prefs.player()), v -> {
-                String pl = prefs.player();
-                prefs.setPlayer(Prefs.PLAYER_BUILTIN.equals(pl) ? Prefs.PLAYER_EXTERNAL
-                        : Prefs.PLAYER_EXTERNAL.equals(pl) ? Prefs.PLAYER_HDHR_APP : Prefs.PLAYER_BUILTIN);
-                render();
-            });
-            row("When the app opens", prefs.startOnLastChannel() ? "Play the last channel" : "Show the home screen", v -> {
-                prefs.setStartOnLastChannel(!prefs.startOnLastChannel());
-                render();
-            });
-            row("Subtitles / captions", prefs.subtitles() ? "On (hold OK while watching to turn on / off)" : "Off", v -> {
-                prefs.setSubtitles(!prefs.subtitles());
-                render();
-            });
-            row("Live preview in the guide", prefs.livePreview() ? "On (uses a tuner while showing)" : "Off", v -> {
-                prefs.setLivePreview(!prefs.livePreview());
-                render();
-            });
-        });
+
+        int hdhrN = 0, tunarrN = 0, iptvCount = 0;
+        for (Channel c : ChannelStore.get().all()) {
+            if (c.iptv) iptvCount++;
+            else if (c.tunarr) tunarrN++;
+            else hdhrN++;
+        }
+        final int iptvN = iptvCount;
 
         group("HDHomeRun", (prefs.tunerIp().isEmpty() ? "Automatic" : prefs.tunerIp())
-                + (prefs.favoritesOnly() ? " · Favorites only" : " · All channels"), () -> {
+                + (prefs.favoritesOnly() ? " · Favorites only" : " · All channels"), hdhrN > 0 ? DOT_OK : DOT_WARN, () -> {
             row("Find HDHomeRun on the network", "Search and pick your tuner", v -> findTuners());
             row("HDHomeRun address", prefs.tunerIp().isEmpty() ? "Automatic" : prefs.tunerIp(), v -> askTunerIp());
             row("Channels shown", prefs.favoritesOnly() ? "Favorites only (set in the HDHomeRun app)" : "All channels", v -> {
@@ -105,14 +265,13 @@ public final class SettingsActivity extends Activity {
                 render();
             });
         });
-        group("Tunarr", prefs.tunarrUrl().isEmpty() ? "Off" : prefs.tunarrUrl(), () -> {
+        group("Tunarr", prefs.tunarrUrl().isEmpty() ? "Off" : tunarrN + " channels · " + prefs.tunarrUrl(),
+                prefs.tunarrUrl().isEmpty() ? DOT_OFF : tunarrN > 0 ? DOT_OK : DOT_WARN, () -> {
             row("Find Tunarr on the network", "Search and pick your Tunarr server", v -> findTunarr());
             row("Tunarr server", prefs.tunarrUrl().isEmpty() ? "Off · click to add" : prefs.tunarrUrl(), v -> askTunarrUrl());
         });
-        int iptvCount = 0;
-        for (Channel c : ChannelStore.get().all()) if (c.iptv) iptvCount++;
-        final int iptvN = iptvCount;
-        group("IPTV", prefs.iptvUrl().isEmpty() ? "Off" : iptvN + " channels · " + shortUrl(prefs.iptvUrl()), () -> {
+        group("IPTV", prefs.iptvUrl().isEmpty() ? "Off" : iptvN + " channels · " + shortUrl(prefs.iptvUrl()),
+                prefs.iptvUrl().isEmpty() ? DOT_OFF : iptvN > 0 ? DOT_OK : DOT_WARN, () -> {
             row("Playlist (M3U)", prefs.iptvUrl().isEmpty() ? "Off · click to add" : shortUrl(prefs.iptvUrl()), v -> askIptv(false));
             row("Guide (XMLTV)", !prefs.iptvGuideUrl().isEmpty() ? shortUrl(prefs.iptvGuideUrl())
                     : !IptvClient.xtreamGuide(prefs.iptvUrl()).isEmpty() ? "Automatic (your provider's xmltv.php)"
@@ -124,7 +283,8 @@ public final class SettingsActivity extends Activity {
                         v -> pickIptvGroups());
             }
         });
-        group("Plex", prefs.plexToken().isEmpty() ? "Not connected" : "Connected", () -> {
+        group("Plex", prefs.plexToken().isEmpty() ? "Not connected" : "Connected",
+                prefs.plexToken().isEmpty() ? DOT_OFF : DOT_OK, () -> {
             row("Plex account", prefs.plexToken().isEmpty() ? "Not connected · click to link"
                     : "Connected · click to re-link", v -> linkPlex());
             row("Open Plex movies in", Prefs.PLEX_BUILTIN.equals(prefs.plexPlayer())
@@ -135,60 +295,53 @@ public final class SettingsActivity extends Activity {
             row("Plex server address", prefs.plexUrl().isEmpty() ? "Automatic after linking" : prefs.plexUrl(),
                     v -> askPlexUrl());
         });
-
-        java.util.List<String[]> cams = prefs.cameras();
-        group("Cameras", cams.isEmpty() ? "None · click to add" : cams.size() + (cams.size() == 1 ? " camera" : " cameras"), () -> {
-            for (int i = 0; i < cams.size(); i++) {
-                final int idx = i;
-                row(cams.get(i)[0], AppLog.mask(cams.get(i)[1]), v -> askCamera(idx));
-            }
-            row("Add camera", "RTSP address from the Eufy app (or a go2rtc relay)", v -> askCamera(-1));
+        row("Refresh channels & guide", ChannelStore.get().status(), v -> {
+            ChannelStore.get().refresh(this);
+            Toast.makeText(this, "Refreshing…", Toast.LENGTH_SHORT).show();
         });
-
-        group("Weather", prefs.weatherLat().isEmpty() ? "Off" : prefs.weatherPlace()
-                + (prefs.weatherAlerts() ? " · alerts on" : ""), () -> {
-            row("Weather location", prefs.weatherLat().isEmpty() ? "Off · click to set your ZIP code or city"
-                    : prefs.weatherPlace() + (prefs.weatherFahrenheit() ? " · °F" : " · °C"), v -> askWeather());
-            row("Weather alerts", prefs.weatherAlerts() ? "Pop up (US · National Weather Service)" : "Off", v -> {
-                prefs.setWeatherAlerts(!prefs.weatherAlerts());
-                render();
-            });
-        });
-        group("System", "PIN " + (prefs.pin().isEmpty() ? "off" : "on") + " · updates · log", () -> {
-            row("Check for updates", "Version " + Updater.currentVersion(this) + " · looks on GitHub", v -> checkForUpdates());
-            row("Check for updates when the app opens", prefs.autoUpdateCheck() ? "On · offers new releases from GitHub" : "Off", v -> {
-                prefs.setAutoUpdateCheck(!prefs.autoUpdateCheck());
-                render();
-            });
-            String tokenSrc = Updater.tokenSource(this);
-            row("GitHub token", tokenSrc.isEmpty() ? "None · set it from your phone (for a private repo)" : "Set (" + tokenSrc + ")",
-                    v -> tokenOptions());
-            row("Settings PIN", prefs.pin().isEmpty() ? "Off" : "On", v -> askPin());
-            row("Refresh channels & guide", ChannelStore.get().status(), v -> {
-                ChannelStore.get().refresh(this);
-                Toast.makeText(this, "Refreshing…", Toast.LENGTH_SHORT).show();
-            });
-            row("Log", "Today's events and errors · kept " + AppLog.KEEP_DAYS + " days", v -> showLog());
-            row("Android settings", "Wi-Fi, display, sound" + (isRestrictedProfile() ? ", restricted profile" : ""), v -> Apps.openSystemSettings(this));
-            // Only in a restricted profile: the way back out (Android asks for the profile PIN).
-            if (isRestrictedProfile())
-                row("Exit restricted profile", "Needs the profile PIN", v -> Apps.exitRestrictedProfile(this));
-        });
-
-        TextView about = Ui.text(this, 14, Ui.SUB, false);
-        about.setSingleLine(false);
-        about.setPadding(0, Ui.dp(this, 24), 0, 0);
-        String ver = "";
-        try { ver = " " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
-        about.setText("Live TV Home" + ver + " — no ads, no tracking, no accounts.");
-        list.addView(about);
-        View target = keep != null ? list.findViewWithTag(keep) : null;
-        if (target == null) target = list.getChildAt(1); // first row
-        if (target != null) target.post(target::requestFocus);
     }
 
-    /** A heading row that opens / closes the rows built by {@code body}. */
-    private void group(String name, String summary, Runnable body) {
+    private void renderCameras() {
+        heading(CAMERAS, "Security cameras");
+        java.util.List<String[]> cams = prefs.cameras();
+        for (int i = 0; i < cams.size(); i++) {
+            final int idx = i;
+            row(cams.get(i)[0], AppLog.mask(cams.get(i)[1]), v -> askCamera(idx));
+        }
+        row("Add camera", "RTSP address from the Eufy app (or a go2rtc relay)", v -> askCamera(-1));
+    }
+
+    private void renderWeather() {
+        heading(WEATHER, "Forecast, radar and alerts");
+        row("Weather location", prefs.weatherLat().isEmpty() ? "Off · click to set your ZIP code or city"
+                : prefs.weatherPlace() + (prefs.weatherFahrenheit() ? " · °F" : " · °C"), v -> askWeather());
+        row("Weather alerts", prefs.weatherAlerts() ? "Pop up (US · National Weather Service)" : "Off", v -> {
+            prefs.setWeatherAlerts(!prefs.weatherAlerts());
+            render();
+        });
+    }
+
+    private void renderSystem() {
+        heading(SYSTEM, "Updates, security and the device");
+        row("Check for updates", "Version " + Updater.currentVersion(this) + " · looks on GitHub", v -> checkForUpdates());
+        row("Check for updates when the app opens", prefs.autoUpdateCheck() ? "On · offers new releases from GitHub" : "Off", v -> {
+            prefs.setAutoUpdateCheck(!prefs.autoUpdateCheck());
+            render();
+        });
+        String tokenSrc = Updater.tokenSource(this);
+        row("GitHub token", tokenSrc.isEmpty() ? "None · set it from your phone (for a private repo)" : "Set (" + tokenSrc + ")",
+                v -> tokenOptions());
+        row("Settings PIN", prefs.pin().isEmpty() ? "Off" : "On", v -> askPin());
+        row("Log", "Today's events and errors · kept " + AppLog.KEEP_DAYS + " days", v -> showLog());
+        row("Android settings", "Wi-Fi, display, sound" + (isRestrictedProfile() ? ", restricted profile" : ""), v -> Apps.openSystemSettings(this));
+        row("Home screen app", HomeApps.currentLabel(this) + " · switch launchers", v -> chooseHomeApp());
+        // Only in a restricted profile: the way back out (Android asks for the profile PIN).
+        if (isRestrictedProfile())
+            row("Exit restricted profile", "Needs the profile PIN", v -> Apps.exitRestrictedProfile(this));
+    }
+
+    /** A heading row (with a status dot) that opens / closes the rows built by {@code body}. */
+    private void group(String name, String summary, int dot, Runnable body) {
         boolean open = expanded.contains(name);
         row((open ? "▾  " : "▸  ") + name, open ? "" : summary, v -> {
             boolean wasOpen = expanded.contains(name);
@@ -196,8 +349,12 @@ public final class SettingsActivity extends Activity {
             if (!wasOpen) expanded.add(name);
             render();
         });
+        LinearLayout r = (LinearLayout) list.getChildAt(list.getChildCount() - 1);
         // Tag by name only, so focus stays on the heading when its arrow flips.
-        list.getChildAt(list.getChildCount() - 1).setTag("group:" + name);
+        r.setTag("group:" + name);
+        View d = new View(this);
+        d.setBackground(Ui.rounded(dot, Ui.dp(this, 6), 0, 0));
+        r.addView(d, 0, Ui.margins(Ui.lp(Ui.dp(this, 12), Ui.dp(this, 12)), 0, 0, Ui.dp(this, 14), 0));
         if (open) {
             inGroup = true;
             body.run();
@@ -214,12 +371,30 @@ public final class SettingsActivity extends Activity {
         r.setPadding(p, p, p, p);
         TextView l = Ui.text(this, 18, Ui.TEXT, true);
         l.setText(label);
-        r.addView(l, Ui.lpWeight(0, -2, 1));
+        r.addView(l, Ui.lpWeight(0, -2, 1.35f)); // labels get a bit more room than values
         TextView v = Ui.text(this, 16, Ui.ACCENT, false);
         v.setText(value);
         v.setGravity(Gravity.END);
         r.addView(v, Ui.lpWeight(0, -2, 1));
         r.setOnClickListener(click);
+        // Up / Down stay in this pane; Left goes back to the categories.
+        r.setOnKeyListener((view, code, e) -> {
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT) {
+                if (e.getAction() == KeyEvent.ACTION_DOWN) focusCategory();
+                return true;
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
+                int dir = code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1;
+                for (int j = list.indexOfChild(view) + dir; j >= 0 && j < list.getChildCount(); j += dir) {
+                    View n = list.getChildAt(j);
+                    if (n.isFocusable()) { n.requestFocus(); return true; }
+                }
+                if (dir < 0) pane.smoothScrollTo(0, 0); // top: show the heading again
+                return true;
+            }
+            return code == KeyEvent.KEYCODE_DPAD_RIGHT; // nothing further right
+        });
         // Rows inside an open group are indented under their heading.
         list.addView(r, Ui.margins(Ui.lp(-1, -2), inGroup ? Ui.dp(this, 40) : 0, 0, 0, Ui.dp(this, 10)));
     }
@@ -522,6 +697,34 @@ public final class SettingsActivity extends Activity {
     }
 
     private boolean isRestrictedProfile() { return Apps.isRestrictedProfile(this); }
+
+    /** Which launcher the Home button opens: Live TV Home, the original one, or another installed. */
+    private void chooseHomeApp() {
+        java.util.List<HomeApps.Entry> apps = HomeApps.list(this);
+        String current = HomeApps.currentPackage(this);
+        String[] names = new String[apps.size()];
+        for (int i = 0; i < apps.size(); i++) {
+            HomeApps.Entry e = apps.get(i);
+            names[i] = e.label + (e.pkg.equals(current) ? "   ✓ current" : "");
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Home screen app")
+                .setItems(names, (d, which) -> {
+                    HomeApps.Entry e = apps.get(which);
+                    if (e.pkg.equals(current)) return;
+                    if (e.ours) { HomeApps.useOurs(this); return; }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("Switch to " + e.label + "?")
+                            .setMessage("The Home button will open " + e.label + " instead of Live TV Home.\n\n"
+                                    + "Live TV Home stays installed: open it from your apps, then Settings › System › "
+                                    + "Home screen app to switch back.")
+                            .setPositiveButton("Switch", (d2, w) -> HomeApps.switchTo(this, e))
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
 
     /** Just the host, so playlist links with a username / password in them aren't shown on the TV. */
     private static String shortUrl(String u) {

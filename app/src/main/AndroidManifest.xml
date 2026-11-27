@@ -26,6 +26,11 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="video/*" />
         </intent>
+        <!-- Other home screens (launchers), for Settings › System › Home screen app. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
         <package android:name="com.silicondust.view" />
         <package android:name="com.plexapp.android" />
         <package android:name="com.google.android.youtube.tv" />
@@ -56,17 +61,25 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
                 <!-- Android TV / Shield app row -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <!-- Phones and tablets: an icon in the app drawer, and "Open" after installing -->
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The home screen (Home button). A separate entry so Settings › System › Home screen app can
+             switch it off to hand Home back to another launcher; the app itself stays in the app row. -->
+        <activity-alias
+            android:name=".HomeAlias"
+            android:targetActivity=".LauncherActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
 
         <activity
             android:name=".PlayerActivity"

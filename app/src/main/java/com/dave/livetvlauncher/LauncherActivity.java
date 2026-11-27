@@ -208,7 +208,8 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
      * the prompt points to the owner profile instead.)
      */
     private void maybeOfferHome() {
-        if (offeredHome || prefs.askedHome() || isDefaultHome()) return;
+        // (Not after the user handed Home to another launcher in Settings.)
+        if (offeredHome || prefs.askedHome() || !HomeApps.oursEnabled(this) || isDefaultHome()) return;
         if (alertDialog != null && alertDialog.isShowing()) return; // don't stack on a weather alert
         offeredHome = true;
         AppLog.i("Home", "Offering to set Live TV Home as the home screen");
@@ -225,26 +226,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     }
 
     /** Ask Android to make this the home app (system dialog on Android 10+), or open Home settings. */
-    private void openHomeChooser() {
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            try {
-                android.app.role.RoleManager rm = (android.app.role.RoleManager) getSystemService(ROLE_SERVICE);
-                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)
-                        && !rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) {
-                    startActivity(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME));
-                    return;
-                }
-            } catch (Exception ignored) {
-                // Fall back to the settings screen below.
-            }
-        }
-        try {
-            startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS));
-        } catch (Exception e) {
-            Toast.makeText(this, "Open Android Settings → Apps → Default apps → Home app, and pick Live TV Home. "
-                    + "A restricted profile can't change this; use the main profile.", Toast.LENGTH_LONG).show();
-        }
-    }
+    private void openHomeChooser() { HomeApps.requestHome(this); }
 
     // Logs display mode changes while the home screen is showing (e.g. the Shield's frame-rate
     // matching switching the TV's signal for the Guide's live preview). Diagnostics only.
