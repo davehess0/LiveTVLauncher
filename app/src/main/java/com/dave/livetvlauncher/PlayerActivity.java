@@ -79,12 +79,34 @@ public final class PlayerActivity extends Activity {
                 .putExtra("token", token);
     }
 
+    /** Direct-play a Jellyfin / Emby item (same player mode as Plex; progress goes back to that server). */
+    public static Intent mediaIntent(Context c, PlexClient.Item it, String base, String token, String userId) {
+        return new Intent(c, PlayerActivity.class)
+                .putExtra(X_PLEX, true)
+                .putExtra(X_NUMS, new String[]{it.title})
+                .putExtra(X_NAMES, new String[]{it.subtitle})
+                .putExtra(X_URLS, new String[]{it.partKey})
+                .putExtra("ratingKey", it.ratingKey)
+                .putExtra("startMs", it.viewOffsetMs)
+                .putExtra("durationMs", it.durationMs)
+                .putExtra("base", base)
+                .putExtra("token", token)
+                .putExtra("server", it.source)
+                .putExtra("mediaSourceId", it.mediaSourceId)
+                .putExtra("userId", userId);
+    }
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final java.util.concurrent.ExecutorService net = java.util.concurrent.Executors.newSingleThreadExecutor();
     private boolean plexMode;
     private String plexKey, plexBase, plexToken;
     private long plexStartMs, plexDurationMs;
     private PlexClient plex;
+    /** Which server the video is from: "plex", or JellyfinClient.JELLYFIN / EMBY. */
+    private String mediaKind = "plex";
+    private JellyfinClient jelly;
+    private String mediaSourceId;
+    private boolean jellyStarted;
     private final Runnable reporter = new Runnable() {
         @Override public void run() {
             reportPlex(playingNow() ? "playing" : "paused");
@@ -159,7 +181,7 @@ public final class PlayerActivity extends Activity {
                 error.setVisibility(View.GONE);
                 retries = 0;
                 if (tuneStartedAt > 0) {
-                    AppLog.i("Player", (plexMode ? "Plex item" : "Channel " + nums[index]) + " playing in VLC after "
+                    AppLog.i("Player", (plexMode ? serverName() + " item" : "Channel " + nums[index]) + " playing in VLC after "
                             + (System.currentTimeMillis() - tuneStartedAt) + " ms");
                     tuneStartedAt = 0;
                 }
@@ -169,10 +191,12 @@ public final class PlayerActivity extends Activity {
                 if (vlc != null && !vlc.isPlaying()) spinner.setVisibility(buffering ? View.VISIBLE : View.GONE);
             }
             @Override public void onError(String why) {
-                AppLog.e("Player", (plexMode ? "Plex item" : "Channel " + nums[index]) + ": " + why, null);
+                AppLog.e("Player", (plexMode ? serverName() + " item" : "Channel " + nums[index]) + ": " + why, null);
                 if (plexMode) {
                     plexFailed = true;
-                    showError("This file can't play here, even with VLC.\n\nPress OK to open it in the Plex app, or Back to return.");
+                    showError(jelly == null
+                            ? "This file can't play here, even with VLC.\n\nPress OK to open it in the Plex app, or Back to return."
+                            : "This file can't play here, even with VLC.\n\nPress Back to return.");
                 } else {
                     retryOrFail("VLC_ERROR");
                 }
@@ -220,7 +244,7 @@ public final class PlayerActivity extends Activity {
     /** Plex file the regular player can't decode: continue in VLC from the same spot. */
     private void switchPlexToVlc(String why) {
         long at = Math.max(posMs(), Math.max(0, plexStartMs - 5000));
-        AppLog.i("Player", "Plex: switching to VLC at " + at / 1000 + " s (" + why + ")");
+        AppLog.i("Player", serverName() + ": switching to VLC at " + at / 1000 + " s (" + why + ")");
         error.setVisibility(View.GONE);
         spinner.setVisibility(View.VISIBLE);
         tuneStartedAt = System.currentTimeMillis();
@@ -268,6 +292,13 @@ public final class PlayerActivity extends Activity {
             plexStartMs = in.getLongExtra("startMs", 0);
             plexDurationMs = in.getLongExtra("durationMs", 0);
             plex = new PlexClient(prefs.clientId());
+            String kind = in.getStringExtra("server");
+            if (kind != null && !"plex".equals(kind)) {
+                mediaKind = kind;
+                mediaSourceId = in.getStringExtra("mediaSourceId");
+                if (mediaSourceId == null) mediaSourceId = plexKey;
+                jelly = new JellyfinClient(kind, plexBase, prefs.clientId()).withUser(plexToken, in.getStringExtra("userId"));
+            }
         }
 
         root = new FrameLayout(this);
@@ -865,7 +896,7 @@ public final class PlayerActivity extends Activity {
         player.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException e) {
                 if (vlc != null) return; // VLC has taken over
-                AppLog.e("Player", (plexMode ? "Plex item " : "Channel " + nums[index] + " " + names[index] + " ")
+                AppLog.e("Player", (plexMode ? serverName() + " item " : "Channel " + nums[index] + " " + names[index] + " ")
                         + "error " + e.getErrorCodeName(), e.getCause() != null ? e.getCause() : e);
                 boolean decoderProblem = e.errorCode >= 4000 && e.errorCode < 6000; // decoding / audio output
                 if (plexMode) {
@@ -883,7 +914,7 @@ public final class PlayerActivity extends Activity {
                     if (decoderProblem) { switchPlexToVlc(e.getErrorCodeName()); return; }
                     plexFailed = true;
                     showError("This file can't play in the built-in player (" + e.getErrorCodeName() + ").\n\n"
-                            + "Press OK to open it in the Plex app, or Back to return.");
+                            + (jelly == null ? "Press OK to open it in the Plex app, or Back to return." : "Press Back to return."));
                     return;
                 }
                 if (decoderProblem) { switchLiveToVlc(e.getErrorCodeName()); return; }
@@ -913,7 +944,7 @@ public final class PlayerActivity extends Activity {
                 String missing = unsupported(tracks, C.TRACK_TYPE_VIDEO, "video")
                         + unsupported(tracks, C.TRACK_TYPE_AUDIO, "audio");
                 if (!missing.isEmpty()) {
-                    AppLog.w("Player", (plexMode ? "Plex item" : "Channel " + nums[index])
+                    AppLog.w("Player", (plexMode ? serverName() + " item" : "Channel " + nums[index])
                             + " has no built-in decoder for " + missing.trim());
                     if (plexMode) switchPlexToVlc("no decoder for " + missing.trim());
                     else switchLiveToVlc("no decoder for " + missing.trim());
@@ -932,7 +963,7 @@ public final class PlayerActivity extends Activity {
                 else if (state == Player.STATE_READY) spinner.setVisibility(View.GONE);
                 if (state == Player.STATE_READY) { retries = 0; error.setVisibility(View.GONE); }
                 if (state == Player.STATE_READY && tuneStartedAt > 0) {
-                    AppLog.i("Player", (plexMode ? "Plex item" : "Channel " + nums[index]) + " playing after "
+                    AppLog.i("Player", (plexMode ? serverName() + " item" : "Channel " + nums[index]) + " playing after "
                             + (System.currentTimeMillis() - tuneStartedAt) + " ms");
                     tuneStartedAt = 0;
                 }
@@ -956,13 +987,15 @@ public final class PlayerActivity extends Activity {
         // Resume where Plex says you left off (minus a few seconds of context).
         long start = Math.max(0, plexStartMs - 5000);
         tuneStartedAt = System.currentTimeMillis();
-        AppLog.i("Player", "Plex: " + nums[0] + " from " + start / 1000 + " s");
+        AppLog.i("Player", serverName() + ": " + nums[0] + " from " + start / 1000 + " s");
         // Separate subtitle files (e.g. Movie.en.srt) come from the Plex server; tracks inside the file
         // need nothing extra. A quick lookup on the home network, then play.
         net.execute(() -> {
             List<PlexClient.SubFile> subs = java.util.Collections.emptyList();
-            try { subs = plex.subtitleFiles(plexBase, plexToken, plexKey); } catch (Exception e) {
-                AppLog.w("Player", "Plex: couldn't list subtitle files (" + e.getClass().getSimpleName() + ")");
+            try {
+                subs = jelly != null ? jelly.subtitleFiles(plexKey) : plex.subtitleFiles(plexBase, plexToken, plexKey);
+            } catch (Exception e) {
+                AppLog.w("Player", serverName() + ": couldn't list subtitle files (" + e.getClass().getSimpleName() + ")");
             }
             final List<PlexClient.SubFile> files = subs;
             handler.post(() -> {
@@ -976,15 +1009,15 @@ public final class PlayerActivity extends Activity {
                 }
                 if (!cfg.isEmpty()) {
                     mi.setSubtitleConfigurations(cfg);
-                    AppLog.i("Player", "Plex: " + cfg.size() + " subtitle file" + (cfg.size() == 1 ? "" : "s"));
+                    AppLog.i("Player", serverName() + ": " + cfg.size() + " subtitle file" + (cfg.size() == 1 ? "" : "s"));
                 }
                 player.setMediaItem(mi.build(), start);
                 player.prepare();
                 player.setPlayWhenReady(true);
             });
         });
-        bannerChannel.setText("PLEX");
-        bannerChannel.setTextColor(Ui.PLEX);
+        bannerChannel.setText(serverName().toUpperCase(java.util.Locale.US));
+        bannerChannel.setTextColor(jelly == null ? Ui.PLEX : JellyfinClient.EMBY.equals(mediaKind) ? 0xFF52B54B : 0xFFAA5CC3);
         bannerTitle.setText(nums[0]);
         showPlexBanner();
         handler.postDelayed(reporter, 10_000);
@@ -1010,10 +1043,21 @@ public final class PlayerActivity extends Activity {
                 : String.format(java.util.Locale.US, "%d:%02d", t / 60, t % 60);
     }
 
+    private String serverName() { return MediaStore.sourceName(mediaKind); }
+
     private void reportPlex(String state) {
         if (!plexMode || (player == null && vlc == null)) return;
         final long pos = posMs();
         final long dur = durMs();
+        if (jelly != null) {
+            // The first report starts the session; the server marks it watched near the end by itself.
+            final String st = "stopped".equals(state) ? "stopped" : !jellyStarted ? "playing" : state;
+            if (!"stopped".equals(state)) jellyStarted = true;
+            final JellyfinClient jc = jelly;
+            final String id = plexKey, msid = mediaSourceId;
+            net.execute(() -> jc.report(st, id, msid, pos));
+            return;
+        }
         final boolean finished = "stopped".equals(state) && dur > 0 && pos > dur * 0.9;
         net.execute(() -> {
             plex.timeline(plexBase, plexToken, plexKey, state, pos, dur);
@@ -1022,7 +1066,7 @@ public final class PlayerActivity extends Activity {
     }
 
     private boolean onPlexKey(int keyCode) {
-        if (plexFailed && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
+        if (plexFailed && jelly == null && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
             AppLog.i("Plex", "Falling back to the Plex app for " + nums[0]);
             PlexStore.openInPlexApp(this, plexKey, plexStartMs);
             finish();
@@ -1349,7 +1393,7 @@ public final class PlayerActivity extends Activity {
             boolean hdr = ci != null && (ci.colorTransfer == C.COLOR_TRANSFER_ST2084 || ci.colorTransfer == C.COLOR_TRANSFER_HLG);
             boolean eightBit = ci != null && ci.lumaBitdepth == 8
                     || androidx.media3.common.MimeTypes.VIDEO_H264.equals(f.sampleMimeType);
-            String what = plexMode ? "Plex item" : "Channel " + nums[index];
+            String what = plexMode ? serverName() + " item" : "Channel " + nums[index];
             AppLog.i("Player", what + " video " + f.sampleMimeType + " " + f.width + "x" + f.height + " · " + color);
             if (hdr && eightBit)
                 AppLog.w("Player", what + " is 8-bit video tagged as HDR: colors will look wrong. "
@@ -1368,7 +1412,7 @@ public final class PlayerActivity extends Activity {
     private void logAvCapabilities(Tracks tracks) {
         if (loggedCaps) return;
         loggedCaps = true;
-        String what = plexMode ? "Plex item" : "Channel " + nums[index];
+        String what = plexMode ? serverName() + " item" : "Channel " + nums[index];
 
         for (Tracks.Group g : tracks.getGroups()) {
             if (g.getType() != C.TRACK_TYPE_AUDIO || g.length == 0) continue;

@@ -293,6 +293,35 @@ final class PhoneSetupServer {
                 }
                 return "Search again, then tap Use.";
             }
+            case "/media": {
+                // Jellyfin / Emby: address + sign-in typed on the phone (the password isn't stored,
+                // only the session the server hands back).
+                String kind = clean(f.get("kind"));
+                if (!JellyfinClient.JELLYFIN.equals(kind) && !JellyfinClient.EMBY.equals(kind)) return "Unknown server type.";
+                String name = MediaStore.sourceName(kind);
+                if (f.containsKey("signout")) {
+                    prefs.setMediaLogin(kind, "", "", "");
+                    AppLog.i("PhoneSetup", name + ": signed out from phone");
+                    mediaChanged();
+                    return esc(name) + ": signed out.";
+                }
+                String url = clean(f.get("url")), user = clean(f.get("user"));
+                String pass = f.get("pass") == null ? "" : f.get("pass");
+                prefs.setMediaUrl(kind, url);
+                if (prefs.mediaUrl(kind).isEmpty()) { mediaChanged(); return esc(name) + " turned off."; }
+                if (user.isEmpty()) { mediaChanged(); return esc(name) + " address saved. Add a username to sign in."; }
+                try {
+                    JellyfinClient jc = new JellyfinClient(kind, prefs.mediaUrl(kind), prefs.clientId());
+                    String[] login = jc.signIn(user, pass);
+                    prefs.setMediaLogin(kind, login[0], login[1], login[2]);
+                    AppLog.i("PhoneSetup", name + ": signed in from phone as " + login[2]);
+                    mediaChanged();
+                    return esc(name) + ": signed in as " + esc(login[2]) + ". Its rows appear on the TV's home screen.";
+                } catch (Exception e) {
+                    AppLog.w("PhoneSetup", name + " sign-in from phone failed (" + e.getMessage() + ")");
+                    return "Couldn't sign in to " + esc(name) + ": " + esc(e.getMessage());
+                }
+            }
             case "/githubtoken": {
                 String t = clean(f.get("token"));
                 if (f.containsKey("remove")) t = "";
@@ -333,6 +362,13 @@ final class PhoneSetupServer {
             default:
                 return "";
         }
+    }
+
+    private void mediaChanged() {
+        main.post(() -> {
+            MediaStore.get().refresh(app);
+            if (onChanged != null) onChanged.run();
+        });
     }
 
     private void changed(boolean reloadChannels) {
@@ -384,6 +420,23 @@ final class PhoneSetupServer {
          .append(field("Plex server address", "plex", prefs.plexUrl(), "e.g. http://192.168.1.50:32400 — blank = automatic after linking"))
          .append(field("Weather (ZIP code or city)", "weather", prefs.weatherPlace(), "blank = off"))
          .append("<button>Save</button></form>");
+
+        b.append("<h2>Jellyfin and Emby</h2>");
+        for (String kind : MediaStore.KINDS) {
+            String name = MediaStore.sourceName(kind);
+            boolean signed = prefs.mediaConnected(kind);
+            b.append("<form method=post action='/media'><input type=hidden name=k value='").append(k).append("'>")
+             .append("<input type=hidden name=kind value='").append(kind).append("'>")
+             .append("<p><b>").append(name).append("</b> <span class=dim>")
+             .append(signed ? "signed in as " + esc(prefs.mediaUserName(kind)) : prefs.mediaUrl(kind).isEmpty() ? "not set up" : "not signed in")
+             .append("</span></p>")
+             .append(field(name + " server", "url", prefs.mediaUrl(kind), "e.g. http://192.168.1.50:8096 — blank = off"))
+             .append(field("Username", "user", prefs.mediaUserName(kind), "your " + name + " username"))
+             .append("<label>Password<input name=pass type=password autocomplete=off placeholder=\"blank if none\"></label>")
+             .append("<button>Sign in</button>")
+             .append(signed ? "<button class=secondary name=signout value=1>Sign out</button>" : "")
+             .append("</form>");
+        }
 
         b.append("<h2>Cameras</h2>");
         List<String[]> cams = prefs.cameras();

@@ -3,7 +3,7 @@
 A home screen built around live TV from your **HDHomeRun**, with **Plex** one press away in the Streaming row.
 Your streaming apps (YouTube, Prime Video, Disney+, Plex) and your Plex movies sit right on the home screen too.
 No ads, no tracking. The app only talks to your HDHomeRun tuner, `api.hdhomerun.com` for guide data,
-your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, your Plex server and `plex.tv` for the one-time sign-in if you link Plex, and GitHub to look for new releases (when the app opens, every few hours while it's open, and when you press **Check for updates**; turn the automatic check off in ⚙ Settings → System).
+your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, your Plex server and `plex.tv` for the one-time sign-in if you link Plex, your Jellyfin or Emby server if you add one, and GitHub to look for new releases (when the app opens, every few hours while it's open, and when you press **Check for updates**).
 
 ## The three layouts (switch any time in ⚙ Settings → Home screen layout)
 
@@ -66,7 +66,7 @@ Add cameras in ⚙ Settings → **Cameras** → **Add camera**: give each one a 
 
 Updates install from inside the app, with no computer or `adb` needed. It works from the main profile or the restricted profile, and the update applies to every profile. On the Shield the restricted profile is allowed to install apps; if Android blocks installs in a profile, the app says so and you update from the main profile instead.
 
-- **Automatically:** when the home screen opens (and again every 6 hours while it stays open), the app quietly asks GitHub for the newest release. If it's newer than what's installed, it offers it with the release notes: **Install** or **Later** (Later skips that version for a day). If you're watching TV when it finds one, it asks the next time you're on the home screen. Nothing shows when you're up to date or offline. Turn it off with ⚙ Settings → System → **Check for updates when the app opens**.
+- **Automatically:** when the home screen opens (and again every 6 hours while it stays open), the app quietly asks GitHub for the newest release. If it's newer than what's installed, it downloads and installs it without asking. Android 11 (the Shield) still shows its own one-tap **Update** confirmation; newer Android versions install it silently. If you're watching TV when it finds one, it waits until you're back on the home screen. Nothing shows when you're up to date or offline.
 - **From the TV:** ⚙ Settings → System → **Check for updates**. It asks this repo's GitHub Releases for the newest version, shows its notes, and on **Install** downloads the APK and hands it to Android, which asks you to confirm. The launcher then restarts on the new version with all settings kept.
 - **From your phone:** download the APK to your phone, open ⚙ Settings → **Set up from your phone**, scan the code and use **Install an update** at the bottom of the page. Confirm on the TV. This needs no token.
 - **Private repo:** give the app a GitHub token so it can read the Releases. Make a *fine-grained* token at github.com → Settings → Developer settings → Personal access tokens, with access to **only this repository** and **Contents: Read-only**. Then either:
@@ -127,6 +127,12 @@ Every layout now has a **Streaming** row of big app banners. By default it shows
 - **Plex app**: the launcher opens the title in Plex with a "play" link. Plex releases 2026.18 and later often open without playing, a known Plex bug. So a few seconds later the launcher also asks the Plex app to play it through Plex's own remote control.
   - That second step needs remote control turned on in the Plex app: Settings → Advanced → **Advertise as player** (wording varies by version).
   - If Plex still only opens, the log says why. The built-in player avoids all of this.
+
+**Jellyfin and Emby:** ⚙ Settings → Sources → **Jellyfin** or **Emby** → enter the server's address (the one you open in a browser, usually port 8096), then sign in:
+- **Jellyfin Quick Connect** (if your server has it on): the TV shows a 6-digit code; in the Jellyfin app on your phone, open Settings → Quick Connect and enter it.
+- **Username and password**, on the TV or from your phone (⚙ Settings → Sources → *Set up from your phone*). The password isn't stored, only the session the server gives back.
+
+Their *Continue watching* (including the next episode of shows you're watching) and *Recently added movies* join the Plex rows on the home screen. Titles play in the built-in player, straight from the file (no transcoding), resume where you left off, and report progress back to the server.
 
 **About ads inside apps:** the launcher itself has none. Ads *inside* YouTube, Prime Video, Disney+ or Plex's free channels depend on your subscription with each service, and no launcher can remove them.
 

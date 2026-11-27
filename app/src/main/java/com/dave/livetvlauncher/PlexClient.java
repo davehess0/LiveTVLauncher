@@ -24,6 +24,9 @@ public final class PlexClient {
     public static final String PRODUCT = "Live TV Home";
 
     public static final class Item {
+        /** Which server: "plex", or JellyfinClient.JELLYFIN / EMBY (ratingKey is then the item id). */
+        public String source = "plex";
+        public String mediaSourceId;   // Jellyfin / Emby: which version of the file
         public String ratingKey = "";
         public String title = "";
         public String subtitle = "";   // year, or "S2 · E5 · Show name"

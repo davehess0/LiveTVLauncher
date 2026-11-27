@@ -207,8 +207,6 @@ public final class SettingsActivity extends Activity {
             getWindow().setBackgroundDrawable(Ui.pageBackground());
             render();
         });
-        row("Streaming row", "Hold OK on an app to add, move or remove it",
-                v -> startActivity(new android.content.Intent(this, AppsActivity.class)));
         row("Apps row on Channel Wall", prefs.showAppRow() ? "Shown" : "Hidden", v -> {
             prefs.setShowAppRow(!prefs.showAppRow());
             render();
@@ -217,7 +215,7 @@ public final class SettingsActivity extends Activity {
             prefs.setClock24h(!prefs.clock24h());
             render();
         });
-        row("Live preview in the guide", prefs.livePreview() ? "On (uses a tuner while showing)" : "Off", v -> {
+        row("Live preview in the guide", prefs.livePreview() ? "On" : "Off", v -> {
             prefs.setLivePreview(!prefs.livePreview());
             render();
         });
@@ -295,6 +293,7 @@ public final class SettingsActivity extends Activity {
             row("Plex server address", prefs.plexUrl().isEmpty() ? "Automatic after linking" : prefs.plexUrl(),
                     v -> askPlexUrl());
         });
+        for (String kind : MediaStore.KINDS) mediaGroup(kind); // Jellyfin, Emby
         row("Refresh channels & guide", ChannelStore.get().status(), v -> {
             ChannelStore.get().refresh(this);
             Toast.makeText(this, "Refreshing…", Toast.LENGTH_SHORT).show();
@@ -323,14 +322,7 @@ public final class SettingsActivity extends Activity {
 
     private void renderSystem() {
         heading(SYSTEM, "Updates, security and the device");
-        row("Check for updates", "Version " + Updater.currentVersion(this) + " · looks on GitHub", v -> checkForUpdates());
-        row("Check for updates when the app opens", prefs.autoUpdateCheck() ? "On · offers new releases from GitHub" : "Off", v -> {
-            prefs.setAutoUpdateCheck(!prefs.autoUpdateCheck());
-            render();
-        });
-        String tokenSrc = Updater.tokenSource(this);
-        row("GitHub token", tokenSrc.isEmpty() ? "None · set it from your phone (for a private repo)" : "Set (" + tokenSrc + ")",
-                v -> tokenOptions());
+        row("Check for updates", Updater.currentVersion(this), v -> checkForUpdates());
         row("Settings PIN", prefs.pin().isEmpty() ? "Off" : "On", v -> askPin());
         row("Log", "Today's events and errors · kept " + AppLog.KEEP_DAYS + " days", v -> showLog());
         row("Android settings", "Wi-Fi, display, sound" + (isRestrictedProfile() ? ", restricted profile" : ""), v -> Apps.openSystemSettings(this));
@@ -854,6 +846,175 @@ public final class SettingsActivity extends Activity {
         });
     }
 
+    // ---- Jellyfin / Emby ----
+
+    /** A Sources group for a Jellyfin or Emby server: address, sign in, sign out. */
+    private void mediaGroup(String kind) {
+        String name = MediaStore.sourceName(kind);
+        boolean set = !prefs.mediaUrl(kind).isEmpty(), signed = prefs.mediaConnected(kind);
+        boolean working = MediaStore.get().working(kind);
+        String problem = MediaStore.get().status(kind);
+        String summary = !set ? "Not set up" : !signed ? "Not signed in"
+                : working ? "Signed in as " + prefs.mediaUserName(kind) : problem.isEmpty() ? "Connecting…" : problem;
+        group(name, summary, !set ? DOT_OFF : signed && working ? DOT_OK : DOT_WARN, () -> {
+            row(name + " server", set ? prefs.mediaUrl(kind) : "Click to add its address", v -> askMediaUrl(kind));
+            if (set) row("Sign in", signed ? "Signed in as " + prefs.mediaUserName(kind) + " · click to switch"
+                    : JellyfinClient.JELLYFIN.equals(kind) ? "Quick Connect, or username and password" : "Username and password",
+                    v -> mediaSignIn(kind));
+            if (signed) row("Sign out", "Removes " + name + " from Continue Watching", v -> {
+                prefs.setMediaLogin(kind, "", "", "");
+                AppLog.i(name, "Signed out");
+                MediaStore.get().refresh(this);
+                render();
+            });
+        });
+    }
+
+    private JellyfinClient mediaClient(String kind) {
+        return new JellyfinClient(kind, prefs.mediaUrl(kind), prefs.clientId());
+    }
+
+    private void askMediaUrl(String kind) {
+        String name = MediaStore.sourceName(kind);
+        EditText in = new EditText(this);
+        in.setHint("e.g. http://192.168.1.20:8096");
+        in.setText(prefs.mediaUrl(kind));
+        in.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        new AlertDialog.Builder(this)
+                .setTitle(name + " server address")
+                .setMessage("The address you open " + name + " at in a browser, with its port (usually 8096). "
+                        + "Tip: typing it from your phone is easier (Set up from your phone).")
+                .setView(in)
+                .setPositiveButton("Save", (d, w) -> {
+                    prefs.setMediaUrl(kind, in.getText().toString());
+                    render();
+                    if (prefs.mediaUrl(kind).isEmpty()) { MediaStore.get().refresh(this); return; }
+                    // Check it answers, then go straight on to signing in.
+                    JellyfinClient jc = mediaClient(kind);
+                    net.execute(() -> {
+                        try {
+                            String[] info = jc.info();
+                            AppLog.i(name, "Server found: " + info[0] + " (" + info[1] + " " + info[2] + ")");
+                            ui.post(() -> {
+                                Toast.makeText(this, "Found " + info[0], Toast.LENGTH_SHORT).show();
+                                if (!prefs.mediaConnected(kind)) mediaSignIn(kind);
+                            });
+                        } catch (Exception e) {
+                            AppLog.w(name, "No answer from " + prefs.mediaUrl(kind) + " (" + e.getMessage() + ")");
+                            ui.post(() -> Toast.makeText(this, "No " + name + " server answered at that address",
+                                    Toast.LENGTH_LONG).show());
+                        }
+                    });
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Jellyfin: offer Quick Connect when the server has it on; otherwise username and password. */
+    private void mediaSignIn(String kind) {
+        if (!JellyfinClient.JELLYFIN.equals(kind)) { mediaPasswordSignIn(kind); return; }
+        JellyfinClient jc = mediaClient(kind);
+        net.execute(() -> {
+            boolean quick = jc.quickConnectEnabled();
+            ui.post(() -> {
+                if (!quick) { mediaPasswordSignIn(kind); return; }
+                new AlertDialog.Builder(this)
+                        .setTitle("Sign in to Jellyfin")
+                        .setItems(new CharSequence[]{"Quick Connect\nApprove a code in the Jellyfin app on your phone",
+                                "Username and password"}, (d, which) -> {
+                            if (which == 0) mediaQuickConnect(kind); else mediaPasswordSignIn(kind);
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            });
+        });
+    }
+
+    private void mediaPasswordSignIn(String kind) {
+        String name = MediaStore.sourceName(kind);
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        int p = Ui.dp(this, 20);
+        form.setPadding(p, Ui.dp(this, 8), p, 0);
+        EditText user = new EditText(this);
+        user.setHint("Username");
+        user.setText(prefs.mediaUserName(kind));
+        user.setInputType(InputType.TYPE_CLASS_TEXT);
+        EditText pass = new EditText(this);
+        pass.setHint("Password (blank if none)");
+        pass.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        form.addView(user);
+        form.addView(pass);
+        new AlertDialog.Builder(this)
+                .setTitle("Sign in to " + name)
+                .setView(form)
+                .setPositiveButton("Sign in", (d, w) -> {
+                    String u = user.getText().toString().trim(), pw = pass.getText().toString();
+                    JellyfinClient jc = mediaClient(kind);
+                    net.execute(() -> {
+                        try {
+                            mediaSignedIn(kind, jc.signIn(u, pw));
+                        } catch (Exception e) {
+                            AppLog.w(name, "Sign-in failed (" + e.getMessage() + ")");
+                            ui.post(() -> Toast.makeText(this, "Couldn't sign in: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                        }
+                    });
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void mediaQuickConnect(String kind) {
+        final JellyfinClient jc = mediaClient(kind);
+        final TextView msg = Ui.text(this, 18, Ui.TEXT, false);
+        msg.setSingleLine(false);
+        msg.setPadding(Ui.dp(this, 24), Ui.dp(this, 16), Ui.dp(this, 24), Ui.dp(this, 8));
+        msg.setText("Getting a code from Jellyfin…");
+        final AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle("Jellyfin Quick Connect")
+                .setView(msg)
+                .setNegativeButton("Cancel", null)
+                .show();
+        net.execute(() -> {
+            try {
+                JellyfinClient.QuickCode q = jc.quickConnectStart();
+                ui.post(() -> msg.setText("In the Jellyfin app on your phone or computer, signed in as you, open\n\n"
+                        + "Settings  ›  Quick Connect\n\nand enter:   " + q.code));
+                for (int i = 0; i < 100 && dlg.isShowing(); i++) { // ~5 minutes
+                    Thread.sleep(3000);
+                    String[] login = jc.quickConnectCheck(q.secret);
+                    if (login == null) continue;
+                    ui.post(dlg::dismiss);
+                    mediaSignedIn(kind, login);
+                    return;
+                }
+            } catch (Exception e) {
+                ui.post(() -> msg.setText("Couldn't use Quick Connect: " + e.getMessage()));
+            }
+        });
+    }
+
+    /** Saves a sign-in ({token, userId, userName}) and loads the rows. Called off the main thread. */
+    private void mediaSignedIn(String kind, String[] login) {
+        String name = MediaStore.sourceName(kind);
+        prefs.setMediaLogin(kind, login[0], login[1], login[2]);
+        AppLog.i(name, "Signed in as " + login[2]);
+        ui.post(() -> {
+            MediaStore.get().addListener(mediaLoaded);
+            MediaStore.get().refresh(this);
+            Toast.makeText(this, name + ": signed in as " + login[2], Toast.LENGTH_SHORT).show();
+            render();
+        });
+    }
+
+    /** Re-show Sources once the rows have loaded, so the status dot turns green. */
+    private final ChannelStore.Listener mediaLoaded = new ChannelStore.Listener() {
+        @Override public void onChannelsChanged() {
+            MediaStore.get().removeListener(this);
+            if (!isFinishing()) render();
+        }
+    };
+
     private void askPlexUrl() {
         EditText in = new EditText(this);
         in.setHint("e.g. http://192.168.1.20:32400");
@@ -876,25 +1037,6 @@ public final class SettingsActivity extends Activity {
     /** Ask GitHub for the newest release; offer to install it if it's newer than this one. */
     private void checkForUpdates() {
         UpdateUi.checkNow(this);
-    }
-
-    /** The token itself is long, so it's typed on the phone page; here it can only be removed. */
-    private void tokenOptions() {
-        boolean onDevice = !prefs.githubToken().isEmpty();
-        AlertDialog.Builder b = new AlertDialog.Builder(this)
-                .setTitle("GitHub token")
-                .setMessage("Lets Check for updates read the Releases of a private repository. Use a fine-grained token "
-                        + "with read-only Contents access to " + Updater.REPO + " only.\n\n"
-                        + "To add or change it, open Set up from your phone and use the GitHub token field."
-                        + (BuildConfig.GITHUB_TOKEN.isEmpty() ? "" : "\n\nThis copy of the app also has a token built in, "
-                        + "used when none is set here."))
-                .setPositiveButton("OK", null);
-        if (onDevice) b.setNeutralButton("Remove", (d, w) -> {
-            prefs.setGithubToken("");
-            AppLog.i("Update", "GitHub token removed");
-            render();
-        });
-        b.show();
     }
 
     private void askPin() {

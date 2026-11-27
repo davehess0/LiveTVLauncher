@@ -11,7 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * The update dialogs, shared by Settings → Check for updates and the automatic check the home
+ * The update dialogs, shared by Settings → Check for updates and the automatic update the home
  * screen runs when the app opens (see {@link #checkQuietly}). The work itself is in {@link Updater}.
  */
 final class UpdateUi {
@@ -22,11 +22,9 @@ final class UpdateUi {
 
     /** The automatic check runs at most this often while the launcher stays open. */
     static final long AUTO_EVERY_MS = 6 * 3600_000L;
-    /** "Later" on the automatic offer: don't ask about that version again for this long. */
-    static final long LATER_MS = 24 * 3600_000L;
     private static long lastAutoCheck;
     private static boolean autoRunning;
-    /** A newer release found while the home screen wasn't showing; offered when it's back. */
+    /** A newer release found while the home screen wasn't showing; installed when it's back. */
     private static Updater.Release pending;
 
     private static boolean gone(Activity a) {
@@ -78,26 +76,26 @@ final class UpdateUi {
                             .setMessage("But its GitHub release has no APK attached yet. Try again later.")
                             .setPositiveButton("OK", null).show();
                 } else {
-                    offer(a, rel, false);
+                    offer(a, rel);
                 }
             });
         });
     }
 
-    // ---- When the app opens: quiet unless there's something to install ----
+    // ---- When the app opens: updates itself, without asking ----
 
     /**
-     * Looks for a newer release in the background (at most every {@link #AUTO_EVERY_MS}) and offers
-     * it. Says nothing when up to date, offline, in a profile that can't install apps, or when the
-     * user chose "Later" for that version within the last day.
+     * Looks for a newer release in the background (at most every {@link #AUTO_EVERY_MS}) and, if
+     * there is one, downloads and installs it straight away. Says nothing when up to date, offline, or
+     * in a profile that can't install apps. (On Android 11, e.g. the Shield, Android still shows its
+     * own install confirmation; newer Android installs it silently.)
      */
     static void checkQuietly(Activity a) {
-        Prefs prefs = new Prefs(a);
-        if (!prefs.autoUpdateCheck()) return;
         if (pending != null) {
+            if (gone(a) || !a.hasWindowFocus()) return;
             Updater.Release r = pending;
             pending = null;
-            offer(a, r, true);
+            autoInstall(a, r);
             return;
         }
         long now = System.currentTimeMillis();
@@ -117,17 +115,21 @@ final class UpdateUi {
             UI.post(() -> {
                 autoRunning = false;
                 if (rel == null || rel.apkUrl.isEmpty() || !Updater.newer(rel.version, Updater.currentVersion(app))) return;
-                if (rel.version.equals(prefs.updateLaterVersion()) && System.currentTimeMillis() < prefs.updateLaterUntil()) return;
-                AppLog.i("Update", "Version " + rel.version + " is available");
-                if (gone(a) || !a.hasWindowFocus()) pending = rel; // e.g. playing a channel: ask on the home screen
-                else offer(a, rel, true);
+                AppLog.i("Update", "Version " + rel.version + " is available · installing it");
+                if (gone(a) || !a.hasWindowFocus()) pending = rel; // e.g. playing a channel: install on the home screen
+                else autoInstall(a, rel);
             });
         });
     }
 
     // ---- Shared ----
 
-    private static void offer(Activity a, Updater.Release rel, boolean automatic) {
+    private static void autoInstall(Activity a, Updater.Release rel) {
+        if (gone(a)) { pending = rel; return; }
+        install(a, rel);
+    }
+
+    private static void offer(Activity a, Updater.Release rel) {
         if (gone(a)) { pending = rel; return; }
         String mine = Updater.currentVersion(a);
         // Release notes are GitHub markdown: drop the heading marks, bold stars and code ticks for the TV.
@@ -138,9 +140,7 @@ final class UpdateUi {
                 .setMessage("You have " + mine + "." + (notes.isEmpty() ? "" : "\n\n" + notes)
                         + "\n\nDownload: " + (rel.apkSize > 0 ? (rel.apkSize / (1024 * 1024)) + " MB" : rel.apkName))
                 .setPositiveButton("Install", (d, w) -> install(a, rel))
-                .setNegativeButton("Later", (d, w) -> {
-                    if (automatic) new Prefs(a).setUpdateLater(rel.version, System.currentTimeMillis() + LATER_MS);
-                })
+                .setNegativeButton("Later", null)
                 .show();
     }
 

@@ -61,6 +61,7 @@ public final class PlexStore {
 
     /** Open a movie/episode: in the Plex app (deep link), or in the built-in player. */
     public static void open(Activity a, PlexClient.Item it) {
+        if (!"plex".equals(it.source)) { MediaStore.open(a, it); return; } // Jellyfin / Emby
         Prefs p = new Prefs(a);
         if (Prefs.PLEX_BUILTIN.equals(p.plexPlayer()) && it.partKey != null) {
             AppLog.i("Plex", "Play in built-in player: " + it.title);

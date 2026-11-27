@@ -72,6 +72,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
             if (current != null) current.tick();
             ChannelStore.get().refreshIfStale(LauncherActivity.this, REFRESH_MS);
             PlexStore.get().refreshIfStale(LauncherActivity.this, REFRESH_MS);
+            MediaStore.get().refreshIfStale(LauncherActivity.this, REFRESH_MS);
             Weather.get().refreshIfStale(LauncherActivity.this, weatherLoaded);
             Weather.get().refreshAlertsIfStale(LauncherActivity.this, alertsChanged);
             handler.postDelayed(this, TICK_MS);
@@ -171,14 +172,17 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         setContentView(container);
         ChannelStore.get().addListener(this);
         PlexStore.get().addListener(plexListener);
+        MediaStore.get().addListener(plexListener);
         rebuild();
         ChannelStore.get().refresh(this);
         PlexStore.get().refresh(this);
+        MediaStore.get().refresh(this);
     }
 
     @Override protected void onDestroy() {
         ChannelStore.get().removeListener(this);
         PlexStore.get().removeListener(plexListener);
+        MediaStore.get().removeListener(plexListener);
         super.onDestroy();
     }
 
@@ -267,6 +271,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         ChannelStore.get().refreshIfStale(this, REFRESH_MS);
         // Plex refreshes more often so Continue Watching reflects what you just watched.
         PlexStore.get().refreshIfStale(this, 60_000L);
+        MediaStore.get().refreshIfStale(this, 60_000L);
         Weather.get().refreshIfStale(this, weatherLoaded);
         Weather.get().refreshAlertsIfStale(this, alertsChanged);
         content.post(this::maybeShowAlert); // an alert that arrived while another screen was open
@@ -330,7 +335,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     private final ChannelStore.Listener plexListener = () -> {
         if (current == null) return;
         boolean hadFocus = getCurrentFocus() != null;
-        current.bindPlex(PlexStore.get().library());
+        current.bindPlex(MediaStore.get().combined()); // Plex, Jellyfin and Emby rows together
         if (!hadFocus || getCurrentFocus() == null) current.focusDefault();
     };
 
@@ -350,7 +355,7 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         }
         content.addView(current.create(), new FrameLayout.LayoutParams(-1, -1));
         current.bind(visibleChannels(), ChannelStore.get().status());
-        current.bindPlex(PlexStore.get().library());
+        current.bindPlex(MediaStore.get().combined()); // Plex, Jellyfin and Emby rows together
         builtSignature = signature();
         content.post(() -> current.focusDefault());
     }

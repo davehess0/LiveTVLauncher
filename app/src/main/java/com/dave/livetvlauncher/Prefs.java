@@ -171,6 +171,24 @@ public final class Prefs {
     public String plexPlayer() { return sp.getString("plexPlayer", PLEX_BUILTIN); }
     public void setPlexPlayer(String v) { sp.edit().putString("plexPlayer", v).apply(); }
 
+    // ---- Jellyfin / Emby (kind = JellyfinClient.JELLYFIN or EMBY) ----
+    public String mediaUrl(String kind) { return sp.getString(kind + "Url", ""); }
+    public String mediaToken(String kind) { return sp.getString(kind + "Token", ""); }
+    public String mediaUserId(String kind) { return sp.getString(kind + "UserId", ""); }
+    public String mediaUserName(String kind) { return sp.getString(kind + "UserName", ""); }
+    public boolean mediaConnected(String kind) { return !mediaUrl(kind).isEmpty() && !mediaToken(kind).isEmpty(); }
+    public void setMediaUrl(String kind, String v) {
+        String u = v == null ? "" : v.trim();
+        if (!u.isEmpty() && !u.matches("(?i)^https?://.*")) u = "http://" + u;
+        // A new server: sign in again.
+        if (!u.equals(mediaUrl(kind))) setMediaLogin(kind, "", "", "");
+        sp.edit().putString(kind + "Url", u).apply();
+    }
+    public void setMediaLogin(String kind, String token, String userId, String userName) {
+        sp.edit().putString(kind + "Token", token).putString(kind + "UserId", userId)
+                .putString(kind + "UserName", userName).apply();
+    }
+
     /** Stable per-install ID Plex uses to recognise this device. */
     public String clientId() {
         String id = sp.getString("clientId", null);
@@ -213,15 +231,6 @@ public final class Prefs {
     }
 
     /** GitHub token for checking a private repo's Releases (read-only). Empty = none. */
-    /** Look for a new release on GitHub when the launcher opens (and every few hours while it's open). */
-    public boolean autoUpdateCheck() { return sp.getBoolean("autoUpdateCheck", true); }
-    public void setAutoUpdateCheck(boolean v) { sp.edit().putBoolean("autoUpdateCheck", v).apply(); }
-    /** "Later" on an automatic update offer: that version isn't offered again until the time given. */
-    public String updateLaterVersion() { return sp.getString("updateLaterVersion", ""); }
-    public long updateLaterUntil() { return sp.getLong("updateLaterUntil", 0); }
-    public void setUpdateLater(String version, long until) {
-        sp.edit().putString("updateLaterVersion", version).putLong("updateLaterUntil", until).apply();
-    }
 
     public String githubToken() { return sp.getString("githubToken", ""); }
     public void setGithubToken(String v) { sp.edit().putString("githubToken", v == null ? "" : v.trim()).apply(); }
