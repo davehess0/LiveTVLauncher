@@ -120,10 +120,15 @@ public abstract class HomeLayout {
                         boolean on = ChannelStore.get().toggleFavorite(host, ch);
                         android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
                                 android.widget.Toast.LENGTH_SHORT).show();
+                        onFavoriteChanged(ch);
+                        v.requestFocus();
                     }});
             return true;
         });
     }
+
+    /** A channel was starred / unstarred: update its ★ in place (the order changes next time the list is built). */
+    protected void onFavoriteChanged(Channel ch) { }
 
     /** Logo image if the guide supplied one, else a number badge. */
     protected View logo(Channel ch, int wDp, int hDp, float badgeSp) {

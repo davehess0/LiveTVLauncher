@@ -64,7 +64,14 @@ public final class ChannelStore {
         return null;
     }
 
-    /** Star or unstar an IPTV channel; the lists re-sort straight away. Returns true if it's now a favorite. */
+    private volatile int favVersion;
+    /** Goes up each time a favorite is added or removed. */
+    public int favVersion() { return favVersion; }
+
+    /**
+     * Star or unstar an IPTV channel. The lists on screen don't move (so you can keep going down the
+     * list starring channels); they show the new order the next time they're built. True if now a favorite.
+     */
     public boolean toggleFavorite(Context ctx, Channel ch) {
         Prefs p = new Prefs(ctx);
         java.util.Set<String> favs = p.iptvFavorites();
@@ -76,8 +83,8 @@ public final class ChannelStore {
         List<Channel> sorted = new ArrayList<>(all);
         java.util.Collections.sort(sorted, java.util.Comparator.comparingDouble(Channel::sortKey));
         all = Collections.unmodifiableList(sorted);
+        favVersion++;
         AppLog.i("Channels", "IPTV " + ch.number + " " + (on ? "added to" : "removed from") + " favorites");
-        for (Listener l : new ArrayList<>(listeners)) l.onChannelsChanged();
         return on;
     }
 

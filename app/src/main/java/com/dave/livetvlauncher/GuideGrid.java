@@ -234,7 +234,10 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
     private long winEnd() { return winStart + WINDOW_MIN * 60L; }
 
     /** Reloads channels and shows, keeping the selection (same channel, same time) when it can. */
-    private void rebuild(boolean keepSelection) {
+    private void rebuild(boolean keepSelection) { rebuild(keepSelection, null); }
+
+    /** order: the channels to show in this order (null = the current list from ChannelStore). */
+    private void rebuild(boolean keepSelection, List<Channel> order) {
         String selChannel = sel >= 0 && sel < channels.size() ? channels.get(sel).number : null;
         long selTime = selShow != null ? Math.max(selShow.start, minStart()) : 0;
 
@@ -242,7 +245,7 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
         rows.clear();
         noGuide.clear();
         long min = minStart();
-        for (Channel ch : ChannelStore.get().visible(prefs)) {
+        for (Channel ch : order != null ? order : ChannelStore.get().visible(prefs)) {
             List<Channel.Airing> shows = new ArrayList<>();
             for (Channel.Airing a : ch.airings) if (a.end > min && a.end > a.start) shows.add(a);
             shows.sort((x, y) -> Long.compare(x.start, y.start));
@@ -628,6 +631,7 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
                     boolean on = ChannelStore.get().toggleFavorite(host, ch);
                     android.widget.Toast.makeText(host, ch.number + (on ? " added to favorites" : " removed from favorites"),
                             android.widget.Toast.LENGTH_SHORT).show();
+                    rebuild(true, new ArrayList<>(channels)); // same order: just the ★ changes
                 }});
     }
 

@@ -251,6 +251,8 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         dm.registerDisplayListener(displayLog, handler);
     }
 
+    private int favSeen;
+
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
@@ -259,7 +261,12 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
         if (!lookApplied.equals(Ui.theme())) applyLook(); // the look was changed in Settings
         maybeStartOnLastChannel(); // channels may already be loaded
         if (!signature().equals(builtSignature)) rebuild();
-        else if (current != null) current.tick();
+        else if (favSeen != ChannelStore.get().favVersion() && current != null) {
+            // Favorites were starred: show them in their new place now that you're back.
+            current.bind(visibleChannels(), ChannelStore.get().status());
+            current.focusDefault();
+        } else if (current != null) current.tick();
+        favSeen = ChannelStore.get().favVersion();
         // Back from the player: show the channel that was playing last (it may have been changed
         // inside the player with the channel list, number keys or CH+/−).
         if (returningFromPlayer && current != null) {

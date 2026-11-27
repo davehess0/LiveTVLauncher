@@ -171,6 +171,10 @@ public final class WallLayout extends HomeLayout {
         return k;
     }
 
+    @Override protected void onFavoriteChanged(Channel ch) {
+        for (Card k : cards) if (k.ch == ch) fill(k);
+    }
+
     private void fill(Card k) {
         long now = now();
         Channel.Airing a = k.ch.now(now);

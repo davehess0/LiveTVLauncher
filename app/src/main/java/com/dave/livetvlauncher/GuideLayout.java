@@ -481,6 +481,15 @@ public final class GuideLayout extends HomeLayout {
         return r;
     }
 
+    @Override protected void onFavoriteChanged(Channel ch) {
+        for (Row r : rows) {
+            if (r.ch != ch) continue;
+            r.name.setText(ch.displayName() + (ch.hd ? "  ·  HD" : ""));
+            fillRow(r);
+        }
+        if (heroCh == ch) showHero(ch);
+    }
+
     private void fillRow(Row r) {
         long now = now();
         Channel.Airing a = r.ch.now(now);
