@@ -52,7 +52,7 @@ public final class SimpleLayout extends HomeLayout {
         float ts = host.hasCameras() ? 24 : 28;
         watch = sourceTile("Watch TV", "Last channel", Ui.LIVE_RED, "●", ts, v -> host.resumeLastChannel());
         tiles.addView(watch, tileLp(2, false));
-        tiles.addView(sourceTile("TV Guide", "What's on now", Ui.ACCENT, "☰", ts, v -> host.showGuide()), tileLp(1, false));
+        tiles.addView(sourceTile("TV Guide", "Now and later", Ui.ACCENT, "☰", ts, v -> host.openGrid()), tileLp(1, false));
         if (host.hasCameras()) tiles.addView(sourceTile("Cameras", "Live view", Ui.LIVE_RED, "◉", ts,
                 v -> host.openCameras()), tileLp(1, false));
         tiles.addView(sourceTile("Apps", "Everything else", Ui.SUB, "▦", ts, v -> host.openApps()), tileLp(1, true));
