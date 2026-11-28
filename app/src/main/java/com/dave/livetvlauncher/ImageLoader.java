@@ -27,13 +27,16 @@ public final class ImageLoader {
     public static void load(final ImageView view, final String url, final int maxPx) {
         view.setTag(url);
         if (url == null) { view.setImageDrawable(null); return; }
-        Bitmap hit = CACHE.get(url);
+        // Cached per size: the same logo is small in a list and large in a preview, and the large one
+        // mustn't be a stretched copy of the small one.
+        final String key = url + "#" + maxPx;
+        Bitmap hit = CACHE.get(key);
         if (hit != null) { view.setImageBitmap(hit); return; }
         view.setImageDrawable(null);
         POOL.execute(() -> {
             Bitmap b = fetch(url, maxPx);
             if (b == null) return;
-            CACHE.put(url, b);
+            CACHE.put(key, b);
             MAIN.post(() -> { if (url.equals(view.getTag())) view.setImageBitmap(b); });
         });
     }

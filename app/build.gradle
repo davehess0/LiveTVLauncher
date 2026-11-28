@@ -10,8 +10,8 @@ android {
         applicationId 'com.dave.livetvlauncher'
         minSdk 26          // Shield 2019 runs Android 11 (API 30)
         targetSdk 34
-        versionCode 35
-        versionName '1.7.1'
+        versionCode 36
+        versionName '1.7.2'
 
         // (No GitHub token is built into the app: anyone can read one out of a published APK.
         //  A token for a private repo can only be set on the device, from the phone setup page.)
