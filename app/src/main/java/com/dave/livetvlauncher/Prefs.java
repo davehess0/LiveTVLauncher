@@ -166,9 +166,16 @@ public final class Prefs {
     public boolean matchFrameRate() { return sp.getBoolean("matchFrameRate", true); }
     public void setMatchFrameRate(boolean v) { sp.edit().putBoolean("matchFrameRate", v).apply(); }
 
-    /** Dolby Vision profile 7 (UHD Blu-ray rips): false = Dolby Vision decoder, true = play its HDR10 base layer. */
-    public boolean dvProfile7AsHdr10() { return sp.getBoolean("dvP7Hdr10", false); }
-    public void setDvProfile7AsHdr10(boolean v) { sp.edit().putBoolean("dvP7Hdr10", v).apply(); }
+    /**
+     * Dolby Vision profile 7 (UHD Blu-ray): "auto" = Dolby Vision for MEL discs, HDR10 for FEL discs (which
+     * flicker on the Shield); "dv" = always Dolby Vision; "hdr10" = always the HDR10 base layer.
+     */
+    public static final String DV7_AUTO = "auto", DV7_DV = "dv", DV7_HDR10 = "hdr10";
+    public String dvProfile7Mode() { return sp.getString("dvP7Mode", DV7_AUTO); }
+    public void setDvProfile7Mode(String v) { sp.edit().putString("dvP7Mode", v).apply(); }
+    /** Per title: "fel" / "mel" once a profile 7 file has been checked (so it's only scanned once). */
+    public String dvElKind(String titleKey) { return sp.getString("dvEl:" + titleKey, ""); }
+    public void setDvElKind(String titleKey, String v) { sp.edit().putString("dvEl:" + titleKey, v).apply(); }
 
     public boolean subtitles() { return sp.getBoolean("subtitles", false); }
     public void setSubtitles(boolean v) { sp.edit().putBoolean("subtitles", v).apply(); }

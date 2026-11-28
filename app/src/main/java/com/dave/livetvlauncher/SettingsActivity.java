@@ -241,8 +241,11 @@ public final class SettingsActivity extends Activity {
             prefs.setMatchFrameRate(!prefs.matchFrameRate());
             render();
         });
-        row("Dolby Vision profile 7", prefs.dvProfile7AsHdr10() ? "Play as HDR10" : "Dolby Vision", v -> {
-            prefs.setDvProfile7AsHdr10(!prefs.dvProfile7AsHdr10());
+        String dv7 = prefs.dvProfile7Mode();
+        row("Dolby Vision profile 7", Prefs.DV7_DV.equals(dv7) ? "Always Dolby Vision"
+                : Prefs.DV7_HDR10.equals(dv7) ? "Always HDR10" : "Automatic", v -> {
+            String m = prefs.dvProfile7Mode();
+            prefs.setDvProfile7Mode(Prefs.DV7_AUTO.equals(m) ? Prefs.DV7_DV : Prefs.DV7_DV.equals(m) ? Prefs.DV7_HDR10 : Prefs.DV7_AUTO);
             render();
         });
     }

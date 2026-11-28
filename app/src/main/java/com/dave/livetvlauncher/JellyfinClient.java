@@ -166,10 +166,39 @@ public final class JellyfinClient {
     /** Subtitle files kept next to the video on the server (tracks inside the file need nothing extra). */
     /** The video's frame rate from the last subtitleFiles() lookup (0 = not known). */
     public volatile float lastFrameRate;
+    /** Its Dolby Vision profile (0 = not Dolby Vision / not known). */
+    public volatile int lastDvProfile;
+    /** Its size, codec ("hevc", "h264", ...) and whether it's HDR / Dolby Vision (0 / "" = not known). */
+    public volatile int lastWidth, lastHeight;
+    public volatile String lastCodec = "";
+    public volatile boolean lastHdr;
+
+    /**
+     * The server's converted (transcoded) version, as HLS: H.264 sized to fit maxW x maxH. H.264 is SDR, so
+     * an HDR source is tone-mapped when the server has tone mapping turned on. Audio: AC3 / E-AC3 / AAC.
+     */
+    public String transcodeUrl(String itemId, String mediaSourceId, int maxW, int maxH, String playSession) throws Exception {
+        return api() + "/Videos/" + itemId + "/master.m3u8?MediaSourceId=" + enc(mediaSourceId)
+                + "&DeviceId=" + enc(deviceId) + "&PlaySessionId=" + enc(playSession)
+                + "&VideoCodec=h264&AudioCodec=eac3,ac3,aac&MaxWidth=" + maxW + "&MaxHeight=" + maxH
+                + "&VideoBitrate=40000000&AudioBitrate=640000&TranscodingMaxAudioChannels=6"
+                + "&SegmentContainer=ts&BreakOnNonKeyFrames=true&api_key=" + enc(token);
+    }
+
+    /** Tell the server to stop converting. */
+    public void stopTranscode(String playSession) {
+        try {
+            request("DELETE", api() + "/Videos/ActiveEncodings?DeviceId=" + enc(deviceId) + "&PlaySessionId=" + enc(playSession), null);
+        } catch (Exception ignored) { }
+    }
 
     public List<PlexClient.SubFile> subtitleFiles(String itemId) throws Exception {
         List<PlexClient.SubFile> out = new ArrayList<>();
         lastFrameRate = 0;
+        lastDvProfile = 0;
+        lastWidth = lastHeight = 0;
+        lastCodec = "";
+        lastHdr = false;
         JSONObject m = new JSONObject(request("GET", api() + "/Users/" + userId + "/Items/" + itemId, null));
         JSONArray sources = m.optJSONArray("MediaSources");
         if (sources == null || sources.length() == 0) return out;
@@ -177,8 +206,14 @@ public final class JellyfinClient {
         JSONArray streams = ms.optJSONArray("MediaStreams");
         for (int i = 0; streams != null && i < streams.length(); i++) {
             JSONObject st = streams.getJSONObject(i);
-            if ("Video".equals(st.optString("Type")) && lastFrameRate == 0)
+            if ("Video".equals(st.optString("Type")) && lastFrameRate == 0) {
                 lastFrameRate = (float) st.optDouble("RealFrameRate", st.optDouble("AverageFrameRate", 0));
+                lastDvProfile = st.optInt("DvProfile", 0);
+                lastWidth = st.optInt("Width", 0);
+                lastHeight = st.optInt("Height", 0);
+                lastCodec = st.optString("Codec", "").toLowerCase(java.util.Locale.US);
+                lastHdr = !"SDR".equalsIgnoreCase(st.optString("VideoRange", "SDR"));
+            }
             if (!"Subtitle".equals(st.optString("Type")) || !st.optBoolean("IsExternal", false)) continue;
             String codec = st.optString("Codec", "").toLowerCase(java.util.Locale.US);
             String ext, mime;

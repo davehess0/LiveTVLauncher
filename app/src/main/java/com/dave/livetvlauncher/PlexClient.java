@@ -183,9 +183,44 @@ public final class PlexClient {
     /** The external subtitle files Plex knows for an item (embedded tracks play from the file itself). */
     /** The video's frame rate from the last subtitleFiles() lookup (0 = not known). */
     public volatile float lastFrameRate;
+    /** Its Dolby Vision profile (0 = not Dolby Vision / not known). */
+    public volatile int lastDvProfile;
+    /** Its size, codec ("hevc", "h264", ...) and whether it's HDR / Dolby Vision (0 / "" = not known). */
+    public volatile int lastWidth, lastHeight;
+    public volatile String lastCodec = "";
+    public volatile boolean lastHdr;
+
+    /**
+     * Plex's converted (transcoded) version, as HLS: the video re-encoded to fit maxW x maxH, and tone-mapped
+     * from HDR to SDR when the server can (Plex Pass + "Enable HDR tone mapping"). Starts at the beginning;
+     * the player seeks within it.
+     */
+    public String transcodeUrl(String base, String token, String ratingKey, int maxW, int maxH, String session) throws Exception {
+        return strip(base) + "/video/:/transcode/universal/start.m3u8?path="
+                + URLEncoder.encode("/library/metadata/" + ratingKey, "UTF-8")
+                + "&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=0&directStreamAudio=1"
+                + "&videoQuality=100&maxVideoBitrate=40000&videoResolution=" + maxW + "x" + maxH
+                + "&subtitles=none&session=" + URLEncoder.encode(session, "UTF-8")
+                + "&X-Plex-Session-Identifier=" + URLEncoder.encode(session, "UTF-8")
+                + "&X-Plex-Client-Identifier=" + URLEncoder.encode(clientId, "UTF-8")
+                + "&X-Plex-Product=" + URLEncoder.encode(PRODUCT, "UTF-8")
+                + "&X-Plex-Platform=Android&X-Plex-Device=" + URLEncoder.encode(android.os.Build.MODEL, "UTF-8")
+                + "&X-Plex-Token=" + URLEncoder.encode(token, "UTF-8");
+    }
+
+    /** Tell Plex to stop converting (it would also time out on its own). */
+    public void stopTranscode(String base, String token, String session) {
+        try {
+            request("GET", strip(base) + "/video/:/transcode/universal/stop?session=" + URLEncoder.encode(session, "UTF-8"), token);
+        } catch (Exception ignored) { }
+    }
 
     public List<SubFile> subtitleFiles(String base, String token, String ratingKey) throws Exception {
         lastFrameRate = 0;
+        lastDvProfile = 0;
+        lastWidth = lastHeight = 0;
+        lastCodec = "";
+        lastHdr = false;
         List<SubFile> out = new ArrayList<>();
         JSONArray md = mc(request("GET", strip(base) + "/library/metadata/" + ratingKey, token)).optJSONArray("Metadata");
         if (md == null || md.length() == 0) return out;
@@ -196,7 +231,15 @@ public final class PlexClient {
         JSONArray streams = parts.getJSONObject(0).optJSONArray("Stream");
         for (int i = 0; streams != null && i < streams.length(); i++) {
             JSONObject st = streams.getJSONObject(i);
-            if (st.optInt("streamType") == 1 && lastFrameRate == 0) lastFrameRate = (float) st.optDouble("frameRate", 0);
+            if (st.optInt("streamType") == 1 && lastFrameRate == 0) {
+                lastFrameRate = (float) st.optDouble("frameRate", 0);
+                lastDvProfile = st.optInt("DOVIProfile", 0);
+                lastWidth = st.optInt("width", 0);
+                lastHeight = st.optInt("height", 0);
+                lastCodec = st.optString("codec", "").toLowerCase(java.util.Locale.US);
+                String trc = st.optString("colorTrc", "");
+                lastHdr = st.optBoolean("DOVIPresent", false) || "smpte2084".equals(trc) || "arib-std-b67".equals(trc);
+            }
             String key = st.optString("key", "");
             if (st.optInt("streamType") != 3 || key.isEmpty()) continue; // 3 = subtitles; a key = separate file
             String codec = st.optString("codec", "").toLowerCase(java.util.Locale.US);

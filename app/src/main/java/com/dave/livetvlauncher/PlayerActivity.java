@@ -1011,9 +1011,12 @@ public final class PlayerActivity extends Activity {
             }
             final List<PlexClient.SubFile> files = subs;
             final float serverFps = jelly != null ? jelly.lastFrameRate : plex.lastFrameRate;
+            boolean converted = chooseOriginalOrConverted();
+            if (!converted) checkProfile7(jelly != null ? jelly.lastDvProfile : plex.lastDvProfile);
             handler.post(() -> switchDisplayThen(serverFps, () -> {
                 if (player == null || vlc != null) return; // closed, or already handed to VLC
                 MediaItem.Builder mi = new MediaItem.Builder().setUri(Uri.parse(urls[0]));
+                if (converted) mi.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8);
                 List<MediaItem.SubtitleConfiguration> cfg = new java.util.ArrayList<>();
                 for (PlexClient.SubFile f : files) {
                     cfg.add(new MediaItem.SubtitleConfiguration.Builder(Uri.parse(f.url))
@@ -1060,6 +1063,12 @@ public final class PlayerActivity extends Activity {
 
     private void reportPlex(String state) {
         if (!plexMode || (player == null && vlc == null)) return;
+        if ("stopped".equals(state) && transcodeSession != null) {
+            final String session = transcodeSession;
+            transcodeSession = null;
+            final JellyfinClient jc = jelly;
+            net.execute(() -> { if (jc != null) jc.stopTranscode(session); else plex.stopTranscode(plexBase, plexToken, session); });
+        }
         final long pos = posMs();
         final long dur = durMs();
         if (jelly != null) {
@@ -1145,6 +1154,97 @@ public final class PlayerActivity extends Activity {
     private boolean dvBaseLayerOnly;
     /** The playing title's video is Dolby Vision (set when its tracks are known). */
     private boolean playingDv;
+    /** The server is converting this title for us (null = playing the original file). */
+    private volatile String transcodeSession;
+
+    /** The TV's largest picture (its highest-resolution mode). */
+    private android.view.Display.Mode tvMaxMode() {
+        android.view.Display.Mode best = display().getMode();
+        for (android.view.Display.Mode m : display().getSupportedModes())
+            if ((long) m.getPhysicalWidth() * m.getPhysicalHeight() > (long) best.getPhysicalWidth() * best.getPhysicalHeight()) best = m;
+        return best;
+    }
+
+    /** This device has a hardware or software decoder for the video at its full size. */
+    private static boolean canDecode(String codec, int w, int h) {
+        String mime = codec.startsWith("hevc") || codec.startsWith("h265") ? "video/hevc"
+                : codec.startsWith("h264") || codec.startsWith("avc") ? "video/avc"
+                : codec.startsWith("av1") ? "video/av01" : codec.startsWith("vp9") ? "video/x-vnd.on2.vp9"
+                : codec.startsWith("mpeg2") ? "video/mpeg2" : null;
+        if (mime == null || w <= 0 || h <= 0) return true; // not known: try it
+        android.media.MediaFormat f = android.media.MediaFormat.createVideoFormat(mime, w, h);
+        return new android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).findDecoderForFormat(f) != null;
+    }
+
+    /**
+     * Original file or the server's converted version? The original is best whenever this device can decode it
+     * and the TV can show it: a 4K file on a 1080p TV is decoded at 4K and scaled down by the device, which
+     * looks better than a re-encoded 1080p copy. Converted (sized for the TV, HDR tone-mapped to SDR) only when
+     *  - the device can't decode the video at its size (e.g. 4K on a 1080p-only streaming stick), or
+     *  - the video is HDR / Dolby Vision and the TV has no HDR (it would look washed out).
+     * Runs on the network thread before playback; true when urls[0] now points at the converted version.
+     */
+    private boolean chooseOriginalOrConverted() {
+        int w = jelly != null ? jelly.lastWidth : plex.lastWidth, h = jelly != null ? jelly.lastHeight : plex.lastHeight;
+        String codec = jelly != null ? jelly.lastCodec : plex.lastCodec;
+        boolean hdr = jelly != null ? jelly.lastHdr : plex.lastHdr;
+        android.view.Display.Mode tv = tvMaxMode();
+        int tvW = tv.getPhysicalWidth(), tvH = tv.getPhysicalHeight();
+        boolean tvHasHdr = tvHdr10 || tvHlg || tvDolbyVision;
+        boolean decodes = canDecode(codec, w, h);
+        String video = (w > 0 ? w + "x" + h + " " : "") + (codec.isEmpty() ? "" : codec.toUpperCase(java.util.Locale.US) + " ") + (hdr ? "HDR" : "SDR");
+        String tvDesc = "TV up to " + tvW + "x" + tvH + (tvHasHdr ? " with HDR" : ", no HDR");
+        String why = !decodes ? "this device can't decode " + w + "x" + h + " " + codec
+                : hdr && !tvHasHdr ? "HDR video on a TV without HDR" : null;
+        if (why == null) {
+            AppLog.i("Player", "Video " + video + " · " + tvDesc + " · playing the original file"
+                    + (w > tvW ? " (this device scales it to " + tvW + "x" + tvH + ")" : ""));
+            return false;
+        }
+        int maxW = Math.min(tvW, 3840), maxH = Math.min(tvH, 2160);
+        if (!decodes) { maxW = Math.min(maxW, 1920); maxH = Math.min(maxH, 1080); }
+        String session = java.util.UUID.randomUUID().toString();
+        try {
+            urls[0] = jelly != null ? jelly.transcodeUrl(plexKey, mediaSourceId, maxW, maxH, session)
+                    : plex.transcodeUrl(plexBase, plexToken, plexKey, maxW, maxH, session);
+        } catch (Exception e) {
+            AppLog.w("Player", "Couldn't build the converted-version link (" + e.getClass().getSimpleName() + ") · playing the original file");
+            return false;
+        }
+        transcodeSession = session;
+        AppLog.i("Player", "Video " + video + " · " + tvDesc + " · " + why + " · asking " + serverName()
+                + " for a converted version up to " + maxW + "x" + maxH
+                + (hdr && !tvHasHdr ? " (tone-mapped to SDR if the server has tone mapping turned on)" : ""));
+        return true;
+    }
+
+    /** This profile 7 title has a full enhancement layer (FEL): play its HDR10 base layer. Set before playback. */
+    private volatile boolean p7Fel;
+
+    /**
+     * Profile 7 in Automatic mode: is it a FEL disc (flickers in Dolby Vision on the Shield) or MEL (fine)?
+     * Checked once per title from two short reads of the file, then remembered. Runs on the network thread.
+     */
+    private void checkProfile7(int dvProfile) {
+        String mode = prefs.dvProfile7Mode();
+        if (dvProfile != 7 || !Prefs.DV7_AUTO.equals(mode)) return;
+        String key = mediaKind + ":" + plexKey;
+        String known = prefs.dvElKind(key);
+        if (!known.isEmpty()) {
+            p7Fel = "fel".equals(known);
+            AppLog.i("Player", "Dolby Vision profile 7 · " + (p7Fel ? "full" : "minimal") + " enhancement layer (checked before)");
+            return;
+        }
+        long t0 = System.currentTimeMillis();
+        DvScan.Result r = DvScan.scan(urls[0]);
+        AppLog.i("Player", "Dolby Vision profile 7 · " + (r.kind == DvScan.Kind.FEL ? "full enhancement layer (FEL)"
+                : r.kind == DvScan.Kind.MEL ? "minimal enhancement layer (MEL)" : "couldn't tell FEL from MEL")
+                + " · " + r.why + " · " + (System.currentTimeMillis() - t0) + " ms");
+        if (r.kind == DvScan.Kind.UNKNOWN) return;
+        p7Fel = r.kind == DvScan.Kind.FEL;
+        prefs.setDvElKind(key, p7Fel ? "fel" : "mel");
+    }
+
     /** What the TV says it can show (read when the player opens). */
     private boolean tvDolbyVision, tvHdr10, tvHlg;
     private boolean loggedTvDvFallback;
@@ -1229,11 +1329,16 @@ public final class PlayerActivity extends Activity {
                 (androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(i.mimeType) ? dv : base).add(i);
             }
             boolean tvNoDv = !tvDolbyVision && hasHevcBase(format);
-            if ((dvBaseLayerOnly || tvNoDv || (isDvProfile7(format) && prefs.dvProfile7AsHdr10())) && !base.isEmpty()) {
+            String dv7 = prefs.dvProfile7Mode();
+            boolean p7Hdr10 = isDvProfile7(format)
+                    && (Prefs.DV7_HDR10.equals(dv7) || (Prefs.DV7_AUTO.equals(dv7) && p7Fel));
+            if ((dvBaseLayerOnly || tvNoDv || p7Hdr10) && !base.isEmpty()) {
                 if (!dvBaseLayerOnly && !loggedTvDvFallback) {
                     loggedTvDvFallback = true;
                     AppLog.i("Player", tvNoDv
                             ? "The TV doesn't support Dolby Vision · playing the HDR10 / HLG base layer"
+                            : Prefs.DV7_AUTO.equals(dv7)
+                            ? "Dolby Vision profile 7 with a full enhancement layer · playing the HDR10 base layer (it flickers in Dolby Vision on the Shield)"
                             : "Dolby Vision profile 7 · playing the HDR10 base layer (Settings → Playback)");
                 }
                 return base;
