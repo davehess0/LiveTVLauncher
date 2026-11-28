@@ -276,6 +276,7 @@ public final class PlayerActivity extends Activity {
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         startMode = display().getMode();
+        readTvHdr();
         prefs = new Prefs(this);
         subsOn = prefs.subtitles();
         Intent in = getIntent();
@@ -1144,6 +1145,34 @@ public final class PlayerActivity extends Activity {
     private boolean dvBaseLayerOnly;
     /** The playing title's video is Dolby Vision (set when its tracks are known). */
     private boolean playingDv;
+    /** What the TV says it can show (read when the player opens). */
+    private boolean tvDolbyVision, tvHdr10, tvHlg;
+    private boolean loggedTvDvFallback;
+
+    /** Read the TV's HDR support from the display (Android reports what the TV's EDID lists). */
+    @SuppressWarnings("deprecation")
+    private void readTvHdr() {
+        android.view.Display.HdrCapabilities caps = display().getHdrCapabilities();
+        StringBuilder sb = new StringBuilder();
+        if (caps != null) for (int t : caps.getSupportedHdrTypes()) {
+            switch (t) {
+                case android.view.Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION: tvDolbyVision = true; sb.append("Dolby Vision, "); break;
+                case android.view.Display.HdrCapabilities.HDR_TYPE_HDR10: tvHdr10 = true; sb.append("HDR10, "); break;
+                case android.view.Display.HdrCapabilities.HDR_TYPE_HLG: tvHlg = true; sb.append("HLG, "); break;
+                case android.view.Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS: sb.append("HDR10+, "); break;
+                default: break;
+            }
+        }
+        AppLog.i("Player", "TV supports: " + (sb.length() == 0 ? "SDR only (no HDR)" : sb.substring(0, sb.length() - 2)));
+    }
+
+    /** Dolby Vision whose base layer is a normal HEVC picture: profile 7 (HDR10), 8.1 (HDR10), 8.4 (HLG). */
+    private static boolean hasHevcBase(androidx.media3.common.Format f) {
+        if (!androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(f.sampleMimeType)) return false;
+        android.util.Pair<Integer, Integer> p = androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getCodecProfileAndLevel(f);
+        return p != null && (p.first == android.media.MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheDtb
+                || p.first == android.media.MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheSt);
+    }
 
     /** Decoders for a MIME type; Dolby Vision also gets the HEVC decoders, for its base layer. */
     private static final androidx.media3.exoplayer.mediacodec.MediaCodecSelector DV_SELECTOR = (mime, secure, tunneling) -> {
@@ -1199,9 +1228,20 @@ public final class PlayerActivity extends Activity {
                 if (!seen.add(i.name + "|" + i.mimeType)) continue;
                 (androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(i.mimeType) ? dv : base).add(i);
             }
-            if ((dvBaseLayerOnly || (isDvProfile7(format) && prefs.dvProfile7AsHdr10())) && !base.isEmpty()) {
-                if (!dvBaseLayerOnly) AppLog.i("Player", "Dolby Vision profile 7 · playing the HDR10 base layer (Settings → Playback)");
+            boolean tvNoDv = !tvDolbyVision && hasHevcBase(format);
+            if ((dvBaseLayerOnly || tvNoDv || (isDvProfile7(format) && prefs.dvProfile7AsHdr10())) && !base.isEmpty()) {
+                if (!dvBaseLayerOnly && !loggedTvDvFallback) {
+                    loggedTvDvFallback = true;
+                    AppLog.i("Player", tvNoDv
+                            ? "The TV doesn't support Dolby Vision · playing the HDR10 / HLG base layer"
+                            : "Dolby Vision profile 7 · playing the HDR10 base layer (Settings → Playback)");
+                }
                 return base;
+            }
+            if (!tvDolbyVision && !loggedTvDvFallback) {
+                loggedTvDvFallback = true;
+                AppLog.w("Player", "The TV doesn't support Dolby Vision, and this file (profile 5) has no HDR10 version · "
+                        + "trying the Dolby Vision decoder anyway (colors may look wrong)");
             }
             dvConfigAttempt = 0;
             // Profile 7: offer each DV decoder twice, first configured as profile 7, then as 8.1.
@@ -1590,6 +1630,10 @@ public final class PlayerActivity extends Activity {
             AppLog.i("Player", what + " video " + f.sampleMimeType + " " + f.width + "x" + f.height + " · " + color
                     + (f.frameRate > 0 ? String.format(java.util.Locale.US, " · %.3f fps", f.frameRate) : " · frame rate not in the file"));
             if (plexMode) matchFrameRate(f.frameRate);
+            if (plexMode && (hdr || androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(f.sampleMimeType))
+                    && !tvHdr10 && !tvHlg && !tvDolbyVision)
+                AppLog.w("Player", what + " is HDR but the TV doesn't support HDR: it will look washed out. "
+                        + "A server that converts HDR to SDR (e.g. Plex Pass tone mapping) is needed for this TV.");
             if (hdr && eightBit)
                 AppLog.w("Player", what + " is 8-bit video tagged as HDR: colors will look wrong. "
                         + "Fix at the source (e.g. Tunarr: use HEVC 10-bit for 4K).");
