@@ -85,6 +85,9 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
     private androidx.media3.exoplayer.ExoPlayer previewPlayer;
     private VlcEngine previewVlc;
     private TextView previewLabel;
+    private android.widget.ImageView previewLogo;
+    /** What shows until the video starts: the channel's logo, or its number if it has none. */
+    private FrameLayout previewPlaceholder;
     private Channel previewCh;
     private boolean shown;
     private final Runnable startPreview = this::startPreview;
@@ -243,9 +246,17 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
         previewBox.setBackground(Ui.glass(host, Ui.PANEL, Ui.dp(host, 14), false));
         int pad = Ui.dp(host, 4);
         previewBox.setPadding(pad, pad, pad, pad);
+        previewPlaceholder = new FrameLayout(host);
         previewLabel = Ui.text(host, 26, Ui.SUB, true);
         previewLabel.setGravity(Gravity.CENTER);
-        previewBox.addView(previewLabel, new FrameLayout.LayoutParams(-1, -1));
+        previewPlaceholder.addView(previewLabel, new FrameLayout.LayoutParams(-1, -1));
+        previewLogo = new android.widget.ImageView(host);
+        previewLogo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams ll = new FrameLayout.LayoutParams(-1, -1);
+        int m = Ui.dp(host, 28);
+        ll.setMargins(m, m, m, m);
+        previewPlaceholder.addView(previewLogo, ll);
+        previewBox.addView(previewPlaceholder, new FrameLayout.LayoutParams(-1, -1));
         previewView = new androidx.media3.ui.PlayerView(host);
         previewView.setUseController(false);
         previewView.setVisibility(View.GONE);
@@ -260,7 +271,10 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
         if (previewBox == null || (previewCh != null && ch.number.equals(previewCh.number))) return;
         stopPreview();
         previewCh = ch;
-        previewLabel.setText(ch.number);
+        // The channel's logo if it has one, else its number, until the video starts.
+        boolean logo = ch.logoUrl != null && !ch.logoUrl.isEmpty();
+        previewLabel.setText(logo ? "" : ch.number);
+        ImageLoader.load(previewLogo, logo ? ch.logoUrl : null, Ui.dp(host, 240));
         if (!shown || ch.streamUrl.isEmpty()) return;
         handler.postDelayed(startPreview, PREVIEW_DELAY_MS);
     }
@@ -277,7 +291,7 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
                         && !t.isTypeSupported(androidx.media3.common.C.TRACK_TYPE_VIDEO) && previewCh == ch) {
                     releaseExoPreview();
                     previewVlc = new VlcEngine(host, previewBox, 1, new VlcEngine.Listener() {
-                        @Override public void onPlaying() { if (previewCh == ch) previewLabel.setVisibility(View.INVISIBLE); }
+                        @Override public void onPlaying() { if (previewCh == ch) previewPlaceholder.setVisibility(View.INVISIBLE); }
                         @Override public void onBuffering(boolean b) { }
                         @Override public void onError(String why) { if (previewCh == ch) stopPreview(); }
                         @Override public void onEnded() { if (previewCh == ch) stopPreview(); }
@@ -289,7 +303,7 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == androidx.media3.common.Player.STATE_READY && previewCh == ch) {
                     previewView.setVisibility(View.VISIBLE);
-                    previewLabel.setVisibility(View.INVISIBLE);
+                    previewPlaceholder.setVisibility(View.INVISIBLE);
                 }
             }
             @Override public void onPlayerError(androidx.media3.common.PlaybackException e) {
@@ -320,7 +334,7 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
         handler.removeCallbacks(startPreview);
         releaseExoPreview();
         if (previewVlc != null) { previewVlc.release(); previewVlc = null; }
-        if (previewLabel != null) previewLabel.setVisibility(View.VISIBLE);
+        if (previewPlaceholder != null) previewPlaceholder.setVisibility(View.VISIBLE);
         previewCh = null;
     }
 
@@ -426,10 +440,11 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
             row.setClipChildren(false);
 
             LinearLayout chan = new LinearLayout(host);
-            chan.setOrientation(LinearLayout.VERTICAL);
             chan.setGravity(Gravity.CENTER_VERTICAL);
             chan.setPadding(Ui.dp(host, 14), 0, Ui.dp(host, 10), 0);
             chan.setBackground(Ui.glass(host, Ui.CARD, Ui.dp(host, 12), false));
+            LinearLayout texts = new LinearLayout(host);
+            texts.setOrientation(LinearLayout.VERTICAL);
             TextView num = Ui.text(host, 15, Ui.TEXT, true);
             num.setText(ch.number);
             num.setSingleLine(true);
@@ -437,8 +452,15 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
             name.setText(ch.displayName());
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.END);
-            chan.addView(num);
-            chan.addView(name);
+            texts.addView(num);
+            texts.addView(name);
+            chan.addView(texts, Ui.lpWeight(0, -2, 1));
+            if (ch.logoUrl != null && !ch.logoUrl.isEmpty()) {
+                android.widget.ImageView logo = new android.widget.ImageView(host);
+                logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                chan.addView(logo, Ui.margins(Ui.lp(Ui.dp(host, 62), Ui.dp(host, 34)), Ui.dp(host, 8), 0, 0, 0));
+                ImageLoader.load(logo, ch.logoUrl, Ui.dp(host, 62));
+            }
             row.addView(chan, Ui.margins(Ui.lp(chanW - Ui.dp(host, 8), rowH), 0, 0, Ui.dp(host, 8), 0));
 
             FrameLayout strip = new FrameLayout(host);
