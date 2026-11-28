@@ -164,8 +164,12 @@ public final class JellyfinClient {
     // ---- subtitles -------------------------------------------------------------------------------
 
     /** Subtitle files kept next to the video on the server (tracks inside the file need nothing extra). */
+    /** The video's frame rate from the last subtitleFiles() lookup (0 = not known). */
+    public volatile float lastFrameRate;
+
     public List<PlexClient.SubFile> subtitleFiles(String itemId) throws Exception {
         List<PlexClient.SubFile> out = new ArrayList<>();
+        lastFrameRate = 0;
         JSONObject m = new JSONObject(request("GET", api() + "/Users/" + userId + "/Items/" + itemId, null));
         JSONArray sources = m.optJSONArray("MediaSources");
         if (sources == null || sources.length() == 0) return out;
@@ -173,6 +177,8 @@ public final class JellyfinClient {
         JSONArray streams = ms.optJSONArray("MediaStreams");
         for (int i = 0; streams != null && i < streams.length(); i++) {
             JSONObject st = streams.getJSONObject(i);
+            if ("Video".equals(st.optString("Type")) && lastFrameRate == 0)
+                lastFrameRate = (float) st.optDouble("RealFrameRate", st.optDouble("AverageFrameRate", 0));
             if (!"Subtitle".equals(st.optString("Type")) || !st.optBoolean("IsExternal", false)) continue;
             String codec = st.optString("Codec", "").toLowerCase(java.util.Locale.US);
             String ext, mime;

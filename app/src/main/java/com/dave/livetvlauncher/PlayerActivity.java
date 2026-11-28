@@ -943,6 +943,17 @@ public final class PlayerActivity extends Activity {
                 // (otherwise the picture stays black, or the sound is missing).
                 String missing = unsupported(tracks, C.TRACK_TYPE_VIDEO, "video")
                         + unsupported(tracks, C.TRACK_TYPE_AUDIO, "audio");
+                if (plexMode && missing.isEmpty()) { audioWorked = true; handler.removeCallbacks(vlcIfStillMissing); }
+                if (plexMode && !missing.isEmpty() && !missing.contains("video")
+                        && (audioWorked || System.currentTimeMillis() - displaySwitchAt < 20_000L)) {
+                    // The audio played a moment ago: the TV / receiver is re-syncing (e.g. after a
+                    // frame-rate switch) and briefly reports no bitstream support. Wait for it to come back.
+                    AppLog.w("Player", "Audio output unavailable for a moment (" + missing.trim() + ") · waiting for the TV / receiver");
+                    stillMissing = missing.trim();
+                    handler.removeCallbacks(vlcIfStillMissing);
+                    handler.postDelayed(vlcIfStillMissing, 12_000L);
+                    return;
+                }
                 if (!missing.isEmpty()) {
                     AppLog.w("Player", (plexMode ? serverName() + " item" : "Channel " + nums[index])
                             + " has no built-in decoder for " + missing.trim());
@@ -998,7 +1009,8 @@ public final class PlayerActivity extends Activity {
                 AppLog.w("Player", serverName() + ": couldn't list subtitle files (" + e.getClass().getSimpleName() + ")");
             }
             final List<PlexClient.SubFile> files = subs;
-            handler.post(() -> {
+            final float serverFps = jelly != null ? jelly.lastFrameRate : plex.lastFrameRate;
+            handler.post(() -> switchDisplayThen(serverFps, () -> {
                 if (player == null || vlc != null) return; // closed, or already handed to VLC
                 MediaItem.Builder mi = new MediaItem.Builder().setUri(Uri.parse(urls[0]));
                 List<MediaItem.SubtitleConfiguration> cfg = new java.util.ArrayList<>();
@@ -1014,7 +1026,7 @@ public final class PlayerActivity extends Activity {
                 player.setMediaItem(mi.build(), start);
                 player.prepare();
                 player.setPlayWhenReady(true);
-            });
+            }));
         });
         bannerChannel.setText(serverName().toUpperCase(java.util.Locale.US));
         bannerChannel.setTextColor(jelly == null ? Ui.PLEX : JellyfinClient.EMBY.equals(mediaKind) ? 0xFF52B54B : 0xFFAA5CC3);
@@ -1373,6 +1385,76 @@ public final class PlayerActivity extends Activity {
     // the film's own rate (same resolution), the way Kodi does, instead of relying on the Shield's setting.
 
     private boolean frameRateSet;
+    /** When we last changed the TV's mode (its audio link drops for a moment then). */
+    private long displaySwitchAt;
+    /** This title's audio has played in ExoPlayer (so a later "no decoder" is the HDMI link re-syncing). */
+    private boolean audioWorked;
+    private String stillMissing = "";
+    private final Runnable vlcIfStillMissing = () -> {
+        if (player == null || vlc != null || isFinishing()) return;
+        AppLog.w("Player", "Audio output didn't come back · switching to VLC");
+        switchPlexToVlc("no decoder for " + stillMissing);
+    };
+
+    /** The TV mode for this frame rate at the current resolution, or null (unknown, none, or already there). */
+    private android.view.Display.Mode modeFor(float fps) {
+        android.view.Display.Mode cur = display().getMode();
+        if (fps <= 0 || fits(cur.getRefreshRate(), fps)) return null;
+        android.view.Display.Mode best = null;
+        for (android.view.Display.Mode m : display().getSupportedModes()) {
+            if (m.getPhysicalWidth() != cur.getPhysicalWidth() || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;
+            if (!fits(m.getRefreshRate(), fps)) continue;
+            if (best == null || Math.abs(m.getRefreshRate() - fps) < Math.abs(best.getRefreshRate() - fps)) best = m;
+        }
+        return best;
+    }
+
+    /**
+     * Before playback: when the server knows the frame rate, switch the TV first and start once it has
+     * switched (as Kodi does), so the picture and the receiver's audio aren't interrupted mid-film.
+     */
+    private void switchDisplayThen(float fps, Runnable start) {
+        android.view.Display.Mode cur = display().getMode();
+        if (!prefs.matchFrameRate() || fps <= 0) { start.run(); return; }
+        frameRateSet = true;
+        android.view.Display.Mode best = modeFor(fps);
+        String from = String.format(java.util.Locale.US, "Frame rate %.3f fps (from %s) · ", fps, serverName());
+        if (best == null) {
+            AppLog.i("Player", from + (fits(cur.getRefreshRate(), fps) ? "TV already at " + describe(cur)
+                    : "no TV mode for it, staying at " + describe(cur)));
+            start.run();
+            return;
+        }
+        if (player != null) player.setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF);
+        AppLog.i("Player", from + "switching TV " + describe(cur) + " → " + describe(best) + " before playing");
+        final long asked = System.currentTimeMillis();
+        displaySwitchAt = asked;
+        final boolean[] started = {false};
+        final android.hardware.display.DisplayManager dm = getSystemService(android.hardware.display.DisplayManager.class);
+        final android.hardware.display.DisplayManager.DisplayListener[] l = new android.hardware.display.DisplayManager.DisplayListener[1];
+        final Runnable go = () -> {
+            if (started[0]) return;
+            started[0] = true;
+            dm.unregisterDisplayListener(l[0]);
+            AppLog.i("Player", "TV at " + describe(display().getMode()) + " after " + (System.currentTimeMillis() - asked) + " ms · starting");
+            displaySwitchAt = System.currentTimeMillis();
+            if (!isFinishing()) start.run();
+        };
+        final int target = best.getModeId();
+        l[0] = new android.hardware.display.DisplayManager.DisplayListener() {
+            @Override public void onDisplayAdded(int id) { }
+            @Override public void onDisplayRemoved(int id) { }
+            @Override public void onDisplayChanged(int id) {
+                // Switched: give the HDMI link (and the receiver's audio) a moment to settle.
+                if (display().getMode().getModeId() == target) { handler.removeCallbacks(go); handler.postDelayed(go, 1500); }
+            }
+        };
+        dm.registerDisplayListener(l[0], handler);
+        handler.postDelayed(go, 6000); // in case no change is reported
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.preferredDisplayModeId = target;
+        getWindow().setAttributes(lp);
+    }
 
     private void matchFrameRate(float fps) {
         android.view.Display.Mode cur = display().getMode();
@@ -1411,6 +1493,7 @@ public final class PlayerActivity extends Activity {
         AppLog.i("Player", "Frame rate: " + String.format(java.util.Locale.US, "%.3f", fps) + " fps · switching TV "
                 + describe(cur) + " → " + describe(best));
         final long asked = System.currentTimeMillis();
+        displaySwitchAt = asked;
         handler.postDelayed(() -> {
             if (isFinishing()) return;
             AppLog.i("Player", "TV now at " + describe(display().getMode()) + " (" + (System.currentTimeMillis() - asked) / 1000 + " s after asking)");

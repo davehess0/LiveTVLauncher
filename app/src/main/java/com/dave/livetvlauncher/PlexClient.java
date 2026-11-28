@@ -181,7 +181,11 @@ public final class PlexClient {
     }
 
     /** The external subtitle files Plex knows for an item (embedded tracks play from the file itself). */
+    /** The video's frame rate from the last subtitleFiles() lookup (0 = not known). */
+    public volatile float lastFrameRate;
+
     public List<SubFile> subtitleFiles(String base, String token, String ratingKey) throws Exception {
+        lastFrameRate = 0;
         List<SubFile> out = new ArrayList<>();
         JSONArray md = mc(request("GET", strip(base) + "/library/metadata/" + ratingKey, token)).optJSONArray("Metadata");
         if (md == null || md.length() == 0) return out;
@@ -192,6 +196,7 @@ public final class PlexClient {
         JSONArray streams = parts.getJSONObject(0).optJSONArray("Stream");
         for (int i = 0; streams != null && i < streams.length(); i++) {
             JSONObject st = streams.getJSONObject(i);
+            if (st.optInt("streamType") == 1 && lastFrameRate == 0) lastFrameRate = (float) st.optDouble("frameRate", 0);
             String key = st.optString("key", "");
             if (st.optInt("streamType") != 3 || key.isEmpty()) continue; // 3 = subtitles; a key = separate file
             String codec = st.optString("codec", "").toLowerCase(java.util.Locale.US);
