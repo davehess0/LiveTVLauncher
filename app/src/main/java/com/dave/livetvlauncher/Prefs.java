@@ -162,6 +162,10 @@ public final class Prefs {
     public void setShowAppRow(boolean v) { sp.edit().putBoolean("showAppRow", v).apply(); }
 
     /** Subtitles / closed captions in the player (the player's menu or CC button toggles it too). */
+    /** Movies and shows: switch the TV to the video's frame rate (23.976 / 24 / 25 Hz …) while it plays. */
+    public boolean matchFrameRate() { return sp.getBoolean("matchFrameRate", true); }
+    public void setMatchFrameRate(boolean v) { sp.edit().putBoolean("matchFrameRate", v).apply(); }
+
     public boolean subtitles() { return sp.getBoolean("subtitles", false); }
     public void setSubtitles(boolean v) { sp.edit().putBoolean("subtitles", v).apply(); }
 

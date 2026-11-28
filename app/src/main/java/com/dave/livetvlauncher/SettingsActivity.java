@@ -237,6 +237,10 @@ public final class SettingsActivity extends Activity {
             prefs.setSubtitles(!prefs.subtitles());
             render();
         });
+        row("Match movie frame rate", prefs.matchFrameRate() ? "On" : "Off", v -> {
+            prefs.setMatchFrameRate(!prefs.matchFrameRate());
+            render();
+        });
     }
 
     /** Status dots: working, set up but not loading, or off. */

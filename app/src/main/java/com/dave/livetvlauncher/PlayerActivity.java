@@ -1329,6 +1329,11 @@ public final class PlayerActivity extends Activity {
         reportPlex("stopped");
         releasePlayback();
         view.setVisibility(View.GONE); // drop the video surface too
+        if (frameRateSet) { // let go of our frame-rate mode so the TV switches back
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.preferredDisplayModeId = 0;
+            getWindow().setAttributes(lp);
+        }
 
         final long started = System.currentTimeMillis();
         final String why = modeChanged
@@ -1357,6 +1362,61 @@ public final class PlayerActivity extends Activity {
         };
         dm.registerDisplayListener(displayWait, handler);
         handler.postDelayed(done, modeChanged ? WAIT_MODE_MS : WAIT_HDR_MS); // in case nothing is reported
+    }
+
+    // ---- Frame rate ----
+    // A 23.976 fps film shown at 60 Hz needs 3:2 pulldown: every other frame is held longer, which shows
+    // as judder / shimmer in pans and fine detail (skies, grain). For movies and shows, ask for a TV mode at
+    // the film's own rate (same resolution), the way Kodi does, instead of relying on the Shield's setting.
+
+    private boolean frameRateSet;
+
+    private void matchFrameRate(float fps) {
+        android.view.Display.Mode cur = display().getMode();
+        if (frameRateSet) return;
+        frameRateSet = true;
+        if (!prefs.matchFrameRate()) {
+            AppLog.i("Player", "Frame rate matching off in Settings · TV at " + describe(cur));
+            return;
+        }
+        if (fps <= 0) {
+            AppLog.i("Player", "Frame rate unknown · TV stays at " + describe(cur) + " (the Shield's own matching may still switch it)");
+            return;
+        }
+        if (fits(cur.getRefreshRate(), fps)) {
+            AppLog.i("Player", "TV already at " + describe(cur) + " for " + String.format(java.util.Locale.US, "%.3f", fps) + " fps");
+            return;
+        }
+        android.view.Display.Mode best = null;
+        for (android.view.Display.Mode m : display().getSupportedModes()) {
+            if (m.getPhysicalWidth() != cur.getPhysicalWidth() || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;
+            if (!fits(m.getRefreshRate(), fps)) continue;
+            // Prefer the exact rate (23.976) over a multiple (47.952).
+            if (best == null || Math.abs(m.getRefreshRate() - fps) < Math.abs(best.getRefreshRate() - fps)) best = m;
+        }
+        if (best == null) {
+            AppLog.w("Player", "No TV mode for " + String.format(java.util.Locale.US, "%.3f", fps) + " fps at "
+                    + cur.getPhysicalWidth() + "x" + cur.getPhysicalHeight() + " · staying at " + describe(cur));
+            return;
+        }
+        // ExoPlayer's own request only allows seamless switches; ours replaces it.
+        if (player != null) player.setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF);
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.preferredDisplayModeId = best.getModeId();
+        getWindow().setAttributes(lp);
+        AppLog.i("Player", "Frame rate: " + String.format(java.util.Locale.US, "%.3f", fps) + " fps · switching TV "
+                + describe(cur) + " → " + describe(best));
+        final long asked = System.currentTimeMillis();
+        handler.postDelayed(() -> {
+            if (isFinishing()) return;
+            AppLog.i("Player", "TV now at " + describe(display().getMode()) + " (" + (System.currentTimeMillis() - asked) / 1000 + " s after asking)");
+        }, 5000);
+    }
+
+    /** The refresh rate shows each frame for a whole number of refreshes (1 or 2), to within 0.05 % (so 24 Hz doesn't count as 23.976). */
+    private static boolean fits(float hz, float fps) {
+        for (int k = 1; k <= 2; k++) if (Math.abs(hz - fps * k) < fps * k * 0.0005f) return true;
+        return false;
     }
 
     private void stopWaitingForDisplay() {
@@ -1394,7 +1454,9 @@ public final class PlayerActivity extends Activity {
             boolean eightBit = ci != null && ci.lumaBitdepth == 8
                     || androidx.media3.common.MimeTypes.VIDEO_H264.equals(f.sampleMimeType);
             String what = plexMode ? serverName() + " item" : "Channel " + nums[index];
-            AppLog.i("Player", what + " video " + f.sampleMimeType + " " + f.width + "x" + f.height + " · " + color);
+            AppLog.i("Player", what + " video " + f.sampleMimeType + " " + f.width + "x" + f.height + " · " + color
+                    + (f.frameRate > 0 ? String.format(java.util.Locale.US, " · %.3f fps", f.frameRate) : " · frame rate not in the file"));
+            if (plexMode) matchFrameRate(f.frameRate);
             if (hdr && eightBit)
                 AppLog.w("Player", what + " is 8-bit video tagged as HDR: colors will look wrong. "
                         + "Fix at the source (e.g. Tunarr: use HEVC 10-bit for 4K).");
