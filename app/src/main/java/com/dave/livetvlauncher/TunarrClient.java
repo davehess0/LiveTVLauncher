@@ -56,9 +56,9 @@ final class TunarrClient {
         return channels;
     }
 
-    /** Fills in logos and airings (from an hour ago to 8 hours ahead) from Tunarr's XMLTV guide. */
+    /** Fills in logos and airings (from an hour ago to 24 hours ahead, as the Full Guide shows) from Tunarr's XMLTV guide. */
     private static void readGuide(String xml, Map<String, Channel> byNumber, String base) throws Exception {
-        long now = System.currentTimeMillis() / 1000L, from = now - 3600, to = now + 8 * 3600;
+        long now = System.currentTimeMillis() / 1000L, from = now - 3600, to = now + 24 * 3600;
         SimpleDateFormat fmt = new SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US);
         Map<String, Channel> byId = new HashMap<>();
 

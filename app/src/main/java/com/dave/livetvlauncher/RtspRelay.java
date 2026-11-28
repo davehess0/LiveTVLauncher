@@ -70,16 +70,24 @@ final class RtspRelay {
 
     private void acceptLoop() {
         while (!closed) {
+            Socket client = null;
             try {
-                Socket client = server.accept();
+                client = server.accept();
                 Socket cam = new Socket();
-                cam.connect(new InetSocketAddress(camHost, camPort), 8000);
+                try {
+                    cam.connect(new InetSocketAddress(camHost, camPort), 8000);
+                } catch (IOException e) {
+                    try { cam.close(); } catch (IOException ignored) { }
+                    throw e;
+                }
                 cam.setTcpNoDelay(true);
                 client.setTcpNoDelay(true);
                 synchronized (open) { open.add(client); open.add(cam); }
-                pump("relay-up", () -> copy(client.getInputStream(), cam.getOutputStream()), client, cam);
-                pump("relay-down", () -> repairStream(cam.getInputStream(), client.getOutputStream()), client, cam);
+                final Socket cl = client;
+                pump("relay-up", () -> copy(cl.getInputStream(), cam.getOutputStream()), cl, cam);
+                pump("relay-down", () -> repairStream(cam.getInputStream(), cl.getOutputStream()), cl, cam);
             } catch (IOException e) {
+                if (client != null) try { client.close(); } catch (IOException ignored) { }
                 if (!closed) AppLog.w("Cameras", "Relay: couldn't connect to camera " + camHost + ":" + camPort
                         + " (" + e.getClass().getSimpleName() + ")");
             }
@@ -93,6 +101,7 @@ final class RtspRelay {
             try { io.run(); } catch (IOException ignored) { }
             try { a.close(); } catch (IOException ignored) { }
             try { b.close(); } catch (IOException ignored) { }
+            synchronized (open) { open.remove(a); open.remove(b); }
         }, name);
         t.setDaemon(true);
         t.start();
@@ -185,6 +194,8 @@ final class RtspRelay {
                 c.fragments++;
                 if (!end) return outList;
             } else {
+                // Another unit started before the collected one ended (its last fragment was lost): drop it.
+                if (start) c.unit = null;
                 outList.add(renumber(c, pkt));
                 return outList;
             }

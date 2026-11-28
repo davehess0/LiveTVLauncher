@@ -3,7 +3,7 @@
 A home screen built around live TV from your **HDHomeRun**, with **Plex** one press away in the Streaming row.
 Your streaming apps (YouTube, Prime Video, Disney+, Plex) and your Plex movies sit right on the home screen too.
 No ads, no tracking. The app only talks to your HDHomeRun tuner, `api.hdhomerun.com` for guide data,
-your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, RainViewer and Esri map tiles when you open the radar, the National Weather Service for alerts, your Plex server and `plex.tv` for the one-time sign-in if you link Plex, your Jellyfin or Emby server if you add one, and GitHub to look for new releases (when the app opens, every few hours while it's open, and when you press **Check for updates**).
+your Tunarr server and IPTV playlist / guide if you add them, Open-Meteo (and Zippopotam.us for a ZIP code) if you turn on weather, the Iowa Environmental Mesonet (NWS radar) and Esri map tiles when you open the radar, the National Weather Service for alerts, your Plex server and `plex.tv` for the one-time sign-in if you link Plex, your Jellyfin or Emby server if you add one, and GitHub to look for new releases (when the app opens, every few hours while it's open, and when you press **Check for updates**).
 
 ## The three layouts (switch any time in ⚙ Settings → Home screen layout)
 
@@ -69,12 +69,9 @@ Updates install from inside the app, with no computer or `adb` needed. It works 
 - **Automatically:** when the home screen opens (and again every 6 hours while it stays open), the app quietly asks GitHub for the newest release. If it's newer than what's installed, it downloads and installs it without asking. Android 11 (the Shield) still shows its own one-tap **Update** confirmation; newer Android versions install it silently. If you're watching TV when it finds one, it waits until you're back on the home screen. Nothing shows when you're up to date or offline.
 - **From the TV:** ⚙ Settings → System → **Check for updates**. It asks this repo's GitHub Releases for the newest version, shows its notes, and on **Install** downloads the APK and hands it to Android, which asks you to confirm. The launcher then restarts on the new version with all settings kept.
 - **From your phone:** download the APK to your phone, open ⚙ Settings → **Set up from your phone**, scan the code and use **Install an update** at the bottom of the page. Confirm on the TV. This needs no token.
-- **Private repo:** give the app a GitHub token so it can read the Releases. Make a *fine-grained* token at github.com → Settings → Developer settings → Personal access tokens, with access to **only this repository** and **Contents: Read-only**. Then either:
-  - paste it into **GitHub token** on the phone setup page. It's stored only on the TV and never shown again, and ⚙ Settings → System → GitHub token can remove it. Or:
-  - add `githubToken=github_pat_…` to `local.properties` (never committed). Every APK you build then carries it, and a token set on the TV takes priority. Anyone holding that APK file could pull the token out of it, which is why it should be read-only and limited to this one repo.
-  The token is only sent to `api.github.com`, and the log masks it.
+- **Private repo:** give the app a GitHub token so it can read the Releases. Make a *fine-grained* token at github.com → Settings → Developer settings → Personal access tokens, with access to **only this repository** and **Contents: Read-only**. Paste it into **GitHub token** on the phone setup page. It's stored only on the TV and never shown again; **Remove token** on the same page removes it. A token is never built into the APK (anyone could read it out of a published file). The token is only sent to `api.github.com`, and the log masks it.
 - **The first time,** Android asks you to let Live TV Home install apps. Settings walks you there (on the Shield: Device Preferences → Security & restrictions → Unknown sources → Live TV Home). This is a separate switch in each profile, so turn it on in every profile you'll update from.
-- **Restricted profile:** anyone using it can install updates, but only genuine Live TV Home updates signed with your key. Set a Settings PIN if you want to control who can.
+- **Restricted profile:** anyone using it can install updates, but only genuine Live TV Home updates signed with your key. Set a Settings PIN if you want to control who can. After 3 wrong PINs, entry pauses (30 s, doubling each time).
 - **Safety checks:** before installing, the app checks that the APK is Live TV Home, isn't older than what's installed, and is signed with the same key. If any check fails, it explains why and installs nothing.
 
 **Publishing an update:**
@@ -99,10 +96,11 @@ Every layout can show the current weather next to the clock, for example ☁️ 
 - Weather is off until you set a location. What you type is looked up once: US ZIP codes at [Zippopotam.us](https://zippopotam.us) and place names at Open-Meteo. After that, only the location's coordinates are sent to Open-Meteo.
 - Clear the field to turn weather off again.
 - **Forecast and radar:** select the temperature next to the clock (OK on the remote, or tap it) to open the weather screen.
+  - **Hourly** (opens first): the next 24 hours — temperature, conditions and chance of rain for each hour.
   - **10-day forecast:** highs, lows, conditions and chance of rain for each day.
-  - **Radar:** an animated loop of the last 2 hours of rain and snow on a dark map centered on your location.
+  - **Radar:** the last hour of the National Weather Service NEXRAD radar mosaic (5-minute steps, looping) on a dark map centered on your location. Press **Down** to move into the map: the arrows move it, **OK** zooms in, **Rewind** or **Back** zooms out, and **Back** at the starting zoom returns to the tabs. US only.
   - Left / Right switch tabs; Back closes.
-  - Radar comes from [RainViewer](https://www.rainviewer.com) and the map from Esri. Both are downloaded only while the Radar tab is open.
+  - Radar comes from the NWS mosaic via the [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu) and the map from Esri. Both are downloaded only while the Radar tab is open.
 - **Weather alerts (US):** the launcher checks the [National Weather Service](https://www.weather.gov) every 5 minutes for watches, warnings and advisories at your location.
   - **On the home screen:** a pop-up shows the alert, how serious it is, how long it lasts and the areas covered. **Dismiss** hides it for good. **Details** shows the full NWS text and what to do. **Later** (or Back) hides it until the app restarts.
   - **While watching TV:** a colored banner appears across the top for 15 seconds, without interrupting the show.
@@ -126,6 +124,7 @@ Every layout now has a **Streaming** row of big app banners. By default it shows
 - **Built-in player** (default): plays the file directly from your server, with no transcoding, and resumes where you left off. It reports progress back to Plex, so Continue Watching and watched status stay correct. OK = pause, Left = back 10 s, Right = forward 30 s. If a file can't play here (usually audio the device can't decode), the screen says so and **OK opens it in the Plex app** instead.
   - **Frame rate:** movies and shows switch the TV to the video's own rate (23.976, 24, 25 … Hz) at the same resolution while they play, so film doesn't judder or shimmer from 3:2 pulldown at 60 Hz. The TV goes black for a moment while it switches. Turn it off in ⚙ Settings → Playback → **Match movie frame rate**. The rate comes from Plex / Jellyfin / Emby, and the TV switches before the video starts, so playback and the receiver's audio aren't interrupted. Only if the server doesn't know it does the player measure it from the first few seconds of video and switch then. A brief audio dropout while the TV switches doesn't hand the title to VLC. The log shows the video's frame rate and what the TV switched to.
   - **Dolby Vision profile 7** (UHD Blu-ray rips, `dvhe.07`) plays on the Shield's Dolby Vision decoder, which doesn't officially support it. There are two kinds: *MEL* discs (almost-empty enhancement layer) play fine in Dolby Vision; *FEL* discs (full enhancement layer) make bright areas flicker, because the Shield can't use the enhancement layer. With ⚙ Settings → Playback → **Dolby Vision profile 7** on **Automatic** (the default), the player checks each profile 7 title once, before it starts, by reading two short pieces of the file, then plays FEL discs as HDR10 and MEL discs as Dolby Vision. The result is remembered for that title. **Always Dolby Vision** / **Always HDR10** override it.
+  - **Shield AI upscaling:** a Shield system setting that apps can't switch on themselves. ⚙ Settings → Playback → **Shield AI upscaling** opens the Shield's Display & Sound page, where it is. The built-in player and VLC both draw video in the way upscaling needs, and frame-rate switching keeps the TV at 4K. The Shield only upscales SDR video below 4K (720p / 1080p), so it doesn't apply to 4K or HDR / Dolby Vision titles.
   - **1080p TVs and TVs without HDR:** before playing, the player compares the video (size, codec, HDR) with the TV's highest resolution and HDR support and this device's decoders. It plays the original file whenever the device can decode it, so a 4K file on a 1080p TV is decoded at 4K and scaled down by the device, which looks better than a re-encoded copy. It asks Plex / Jellyfin / Emby for a converted version sized for the TV only when the device can't decode the video, or when the video is HDR and the TV has no HDR. The server then tone-maps it to SDR if tone mapping is on (Plex needs Plex Pass). The log shows which it chose and why.
   - **TVs without Dolby Vision:** the player checks what the TV supports when it opens. If the TV doesn't list Dolby Vision, profile 7 and 8 files play their HDR10 (or HLG) version instead. Profile 5 files have no HDR10 version and may show wrong colors on such a TV. The log shows what the TV supports.
 - **Plex app**: the launcher opens the title in Plex with a "play" link. Plex releases 2026.18 and later often open without playing, a known Plex bug. So a few seconds later the launcher also asks the Plex app to play it through Plex's own remote control.
@@ -149,6 +148,8 @@ Pick a channel and it plays right away in the built-in player, straight from the
 **The Guide's preview box:** press Right from the channel list to select it. Up / Down scroll through the full show description, OK opens the channel, and Left goes back to it in the list.
 
 **Live preview in the Guide:** when you rest on a channel in the Guide layout for about a second, its preview panel plays that channel live, without sound. The logo shows until the video starts. Channels the device can't decode use VLC, as in the full player. The preview uses one tuner while it plays and gives it back as soon as you open a channel, move to another row or leave the Guide. To turn it off, for example if your tuners are often all busy, go to ⚙ Settings → **Live preview in the guide**.
+
+**Live preview in the Full Guide:** the full-screen Full Guide (Guide button, or the Full Guide button on the home screen) also plays the selected channel, muted, in a box next to the show details, after about a second on a channel. It follows the selection, gives the tuner back as soon as you watch something or leave the guide, and uses the same setting. The guide shown over live TV has no preview: the channel you're watching is already playing behind it.
 
 **Subtitles and closed captions:** turn them on in ⚙ Settings → Playback → **Subtitles / captions**, or while watching by **holding OK** (or a remote's CC button, or the **CC** touch button). The choice is remembered.
 - Antenna channels show their broadcast closed captions.
@@ -294,7 +295,7 @@ app/src/main/java/com/dave/livetvlauncher/
   TunarrClient       Tunarr lineup.json + XMLTV guide
   IptvClient         IPTV M3U playlist + XMLTV guide (streamed, .gz ok)
   Weather            Current conditions for the clock (Open-Meteo)
-  WeatherActivity    10-day forecast + radar loop (RainViewer, Esri map)
+  WeatherActivity    Hourly + 10-day forecast + radar loop with pan / zoom (NWS radar via IEM, Esri map)
   PhoneSetupServer   "Set up from your phone" web page + QR code
   CamerasActivity    RTSP security-camera grid / full screen
   AppLog / App       Daily log files (3 days, 1 MB/day) + crash logging

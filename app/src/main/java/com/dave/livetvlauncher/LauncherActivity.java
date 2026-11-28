@@ -479,10 +479,19 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
     }
 
     /** Launcher settings, behind the optional PIN so the restricted profile can't change them. */
+    /** Wrong PIN guesses in a row, and until when entry is paused (so the PIN can't be guessed by trying them all). */
+    private static int wrongPins;
+    private static long pinLockedUntil;
+
     void openSettings() {
         String pin = prefs.pin();
         if (pin.isEmpty()) {
             startActivity(new Intent(this, SettingsActivity.class));
+            return;
+        }
+        long wait = pinLockedUntil - System.currentTimeMillis();
+        if (wait > 0) {
+            Toast.makeText(this, "Too many wrong PINs. Try again in " + ((wait + 999) / 1000) + " s.", Toast.LENGTH_LONG).show();
             return;
         }
         EditText in = new EditText(this);
@@ -491,8 +500,18 @@ public final class LauncherActivity extends Activity implements ChannelStore.Lis
                 .setTitle("Enter launcher PIN")
                 .setView(in)
                 .setPositiveButton("OK", (d, w) -> {
-                    if (pin.equals(in.getText().toString())) startActivity(new Intent(this, SettingsActivity.class));
-                    else Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show();
+                    if (pin.equals(in.getText().toString())) {
+                        wrongPins = 0;
+                        startActivity(new Intent(this, SettingsActivity.class));
+                    } else if (++wrongPins >= 3) {
+                        // 30 s after 3 wrong tries, doubling each time after that (up to an hour).
+                        long pause = Math.min(3600_000L, 30_000L << Math.min(7, wrongPins - 3));
+                        pinLockedUntil = System.currentTimeMillis() + pause;
+                        AppLog.w("App", "Settings PIN: " + wrongPins + " wrong tries · paused " + pause / 1000 + " s");
+                        Toast.makeText(this, "Wrong PIN. Try again in " + pause / 1000 + " s.", Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show();
+                    }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();

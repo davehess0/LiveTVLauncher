@@ -131,7 +131,9 @@ final class Reminders {
     static void scheduleAll(Context c) {
         List<Reminder> list = all(c);
         save(c, list); // prunes ended ones
-        for (Reminder r : list) if (!r.shown) schedule(c, r);
+        // Not for shows that started long ago (e.g. the app restarted mid-show): those would pop up at once.
+        long now = nowSec();
+        for (Reminder r : list) if (!r.shown && now < Math.min(r.end, r.start + LATE_SEC)) schedule(c, r);
     }
 
     /**

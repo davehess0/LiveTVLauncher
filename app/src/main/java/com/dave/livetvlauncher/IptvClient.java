@@ -79,6 +79,8 @@ final class IptvClient {
                 } else if (line.startsWith("#")) {
                     // #EXTVLCOPT and other options: not used
                 } else if (extinf != null) {
+                    if (!isStreamUrl(line)) { extinf = null; continue; } // e.g. file:// or content://: never opened
+                    if (entries.size() >= MAX_ENTRIES) break; // a runaway playlist: don't run out of memory
                     Map<String, String> a = attrs(extinf);
                     String group = firstNonEmpty(a.get("group-title"), extgrp, "");
                     String title = titleOf(extinf);
@@ -102,7 +104,7 @@ final class IptvClient {
             ch.iptv = true;
             ch.name = e[0];
             ch.streamUrl = e[1];
-            ch.logoUrl = e[4].isEmpty() ? null : e[4];
+            ch.logoUrl = isWebUrl(e[4]) ? e[4] : null;
             ch.group = e[5];
             ch.guideId = e[2];
             ch.guideName = e[3].isEmpty() ? e[0] : e[3];
@@ -365,11 +367,27 @@ final class IptvClient {
     }
 
     private static long parse(SimpleDateFormat fmt, String s) {
+        if (s == null) return 0;
+        String t = s.trim();
+        // Some guides leave out the time zone ("20261127200000"): XMLTV says that means UTC.
+        if (t.matches("\\d{14}")) t += " +0000";
         try {
-            return s == null ? 0 : fmt.parse(s.trim()).getTime() / 1000L;
+            return fmt.parse(t).getTime() / 1000L;
         } catch (Exception e) {
             return 0;
         }
+    }
+
+    /** Entries read from a playlist at most (far more than any real channel list). */
+    static final int MAX_ENTRIES = 200_000;
+
+    /** Addresses a channel may play from (providers send http / https, sometimes RTMP / RTSP / UDP). */
+    static boolean isStreamUrl(String u) {
+        return u.matches("(?i)^(https?|rtmps?|rtsps?|udp|rtp|mmsh?)://.+");
+    }
+
+    static boolean isWebUrl(String u) {
+        return u != null && u.matches("(?i)^https?://.+");
     }
 
     /** Stream URLs the timeshift recorder can't take (adaptive playlists, RTMP, RTSP): played directly. */

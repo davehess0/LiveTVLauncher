@@ -10,17 +10,11 @@ android {
         applicationId 'com.dave.livetvlauncher'
         minSdk 26          // Shield 2019 runs Android 11 (API 30)
         targetSdk 34
-        versionCode 33
-        versionName '1.6.7'
+        versionCode 34
+        versionName '1.7.0'
 
-        // Optional GitHub token for "Check for updates" on a private repo: add a line
-        //   githubToken=github_pat_...
-        // to local.properties (never committed). Use a fine-grained token with read-only
-        // "Contents" access to this one repository. Blank = none (a token can also be set from the phone).
-        def lp = new Properties()
-        def lpFile = rootProject.file('local.properties')
-        if (lpFile.exists()) lpFile.withInputStream { lp.load(it) }
-        buildConfigField 'String', 'GITHUB_TOKEN', '"' + (lp.getProperty('githubToken') ?: '').trim() + '"'
+        // (No GitHub token is built into the app: anyone can read one out of a published APK.
+        //  A token for a private repo can only be set on the device, from the phone setup page.)
     }
 
     buildFeatures {

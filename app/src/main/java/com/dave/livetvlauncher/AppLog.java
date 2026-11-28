@@ -133,8 +133,8 @@ final class AppLog {
                 .replaceAll("(?i)(X-Plex-Token=)[^&\\s\"]+", "$1•••")
                 .replaceAll("(?i)(DeviceAuth=)[^&\\s\"]+", "$1•••")
                 .replaceAll("(?i)(token[\"']?\\s*[:=]\\s*[\"']?)[A-Za-z0-9_\\-]{6,}", "$1•••")
-                .replaceAll("(?i)([?&](?:username|password|user|pass|pwd|token|key)=)[^&\s\"]+", "$1•••")
-                .replaceAll("(?i)(https?://[^/\s]+/(?:live|movie|series)/)[^/\s]+/[^/\s]+/", "$1•••/•••/")
+                .replaceAll("(?i)([?&](?:username|password|user|pass|pwd|token|key|api_key|apikey)=)[^&\\s\"]+", "$1•••")
+                .replaceAll("(?i)(https?://[^/\\s]+/(?:live|movie|series)/)[^/\\s]+/[^/\\s]+/", "$1•••/•••/")
                 .replaceAll("(rtsps?://|https?://)([^/@\\s:]+):([^/@\\s]+)@", "$1$2:•••@");
     }
 

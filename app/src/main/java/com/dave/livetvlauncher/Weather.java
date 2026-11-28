@@ -260,6 +260,35 @@ final class Weather {
         return out;
     }
 
+    /** One hour of the hourly forecast. */
+    static final class Hour {
+        long time; // unix seconds, start of the hour
+        int code, temp, rainChance;
+        boolean day;
+    }
+
+    /** The next 24 hours, starting with the current hour. Network call: run off the main thread. */
+    static java.util.List<Hour> hourly(Prefs p) throws Exception {
+        JSONObject h = new JSONObject(HdhrClient.get("https://api.open-meteo.com/v1/forecast?latitude=" + p.weatherLat()
+                + "&longitude=" + p.weatherLon()
+                + "&hourly=temperature_2m,weather_code,precipitation_probability,is_day"
+                + "&forecast_hours=24&timezone=auto&timeformat=unixtime" + (p.weatherFahrenheit() ? "&temperature_unit=fahrenheit" : "")))
+                .getJSONObject("hourly");
+        JSONArray t = h.getJSONArray("time"), temp = h.getJSONArray("temperature_2m"), code = h.getJSONArray("weather_code");
+        JSONArray rain = h.optJSONArray("precipitation_probability"), day = h.optJSONArray("is_day");
+        java.util.List<Hour> out = new java.util.ArrayList<>();
+        for (int i = 0; i < t.length(); i++) {
+            Hour x = new Hour();
+            x.time = t.getLong(i);
+            x.temp = (int) Math.round(temp.optDouble(i, 0));
+            x.code = code.optInt(i, -1);
+            x.rainChance = rain != null ? rain.optInt(i, 0) : 0;
+            x.day = day == null || day.optInt(i, 1) == 1;
+            out.add(x);
+        }
+        return out;
+    }
+
     /** Plain-words description of a WMO weather code. */
     static String describe(int code) {
         if (code == 0) return "Clear";
@@ -283,7 +312,7 @@ final class Weather {
         if (code == 1 || code == 2) return day ? "🌤️" : "☁️";
         if (code == 3) return "☁️";
         if (code == 45 || code == 48) return "🌫️";
-        if (code >= 51 && code <= 57) return "🌦️";
+        if (code >= 51 && code <= 57) return day ? "🌦️" : "🌧️";
         if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return "🌧️";
         if ((code >= 71 && code <= 77) || code == 85 || code == 86) return "🌨️";
         if (code >= 95) return "⛈️";

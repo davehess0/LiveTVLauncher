@@ -89,11 +89,15 @@ final class PhoneSetupServer {
         return null;
     }
 
+    /** At most this many requests at once, so a device on the network can't flood the TV. */
+    private final java.util.concurrent.Semaphore slots = new java.util.concurrent.Semaphore(6);
+
     private void acceptLoop() {
         while (running) {
             try {
                 Socket s = server.accept();
-                Thread t = new Thread(() -> handle(s), "phone-setup-client");
+                if (!slots.tryAcquire()) { try { s.close(); } catch (IOException ignored) { } continue; }
+                Thread t = new Thread(() -> { try { handle(s); } finally { slots.release(); } }, "phone-setup-client");
                 t.setDaemon(true);
                 t.start();
             } catch (IOException e) {

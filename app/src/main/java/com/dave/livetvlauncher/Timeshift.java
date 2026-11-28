@@ -47,8 +47,16 @@ final class Timeshift {
     private final ArrayList<long[]> index = new ArrayList<>();
 
     Timeshift(File cacheDir, String url) {
-        this.dir = new File(cacheDir, "timeshift");
-        deleteAll(dir);
+        // Each session has its own folder: the previous channel's clean-up (which runs a moment after a
+        // channel change) must not delete this one's files. Folders left behind by a crash are removed here.
+        File root = new File(cacheDir, "timeshift");
+        File[] old = root.listFiles();
+        if (old != null) for (File f : old) {
+            if (f.isDirectory()) deleteAll(f);
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
+        }
+        this.dir = new File(root, "s" + System.nanoTime());
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
         // Up to 2 GB (about 15-20 min of HD), but never more than a third of the free space.
@@ -71,6 +79,8 @@ final class Timeshift {
         new Thread(() -> {
             try { writer.join(3000); } catch (InterruptedException ignored) { }
             deleteAll(dir);
+            //noinspection ResultOfMethodCallIgnored
+            dir.delete();
         }).start();
     }
 
@@ -166,7 +176,10 @@ final class Timeshift {
         long outSeg = -1, lastIndex = 0;
         byte[] buf = new byte[64 * 1024];
         try {
-            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            URL u = new URL(url);
+            if (!"http".equalsIgnoreCase(u.getProtocol()) && !"https".equalsIgnoreCase(u.getProtocol()))
+                throw new IOException("not a web address (" + u.getProtocol() + ")");
+            HttpURLConnection c = (HttpURLConnection) u.openConnection();
             conn = c;
             c.setConnectTimeout(5000);
             c.setReadTimeout(20000); // Tunarr can take several seconds to start transcoding
@@ -198,9 +211,9 @@ final class Timeshift {
                     trim();
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             if (!stopped) {
-                failure = e;
+                failure = e instanceof IOException ? (IOException) e : new IOException(e);
                 AppLog.e("Timeshift", "Stream stopped after " + written / 1024 + " KB", e);
             }
         } finally {
@@ -212,12 +225,14 @@ final class Timeshift {
     /** Drop whole segments from the front once the buffer is over its size limit. */
     private void trim() {
         while (written - oldest > maxBytes + SEG) {
-            //noinspection ResultOfMethodCallIgnored
-            segFile(oldest / SEG).delete();
+            long seg = oldest / SEG;
+            // Move the start past the segment first, so a reader never opens a file that's being deleted.
             synchronized (this) {
                 oldest += SEG;
                 while (index.size() > 1 && index.get(1)[1] <= oldest) index.remove(0);
             }
+            //noinspection ResultOfMethodCallIgnored
+            segFile(seg).delete();
         }
     }
 

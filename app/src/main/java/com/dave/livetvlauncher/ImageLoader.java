@@ -133,10 +133,15 @@ public final class ImageLoader {
         }
     }
 
+    /** Larger than this isn't a logo or poster: stop reading (a hostile guide can't exhaust memory). */
+    private static final int MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
     private static Bitmap fetch(String url, int maxPx) {
         HttpURLConnection c = null;
         try {
-            c = (HttpURLConnection) new URL(url).openConnection();
+            URL u = new URL(url);
+            if (!"http".equalsIgnoreCase(u.getProtocol()) && !"https".equalsIgnoreCase(u.getProtocol())) return null;
+            c = (HttpURLConnection) u.openConnection();
             c.setConnectTimeout(5000);
             c.setReadTimeout(10000);
             byte[] data;
@@ -144,7 +149,10 @@ public final class ImageLoader {
                 java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
                 byte[] buf = new byte[16384];
                 int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    if (out.size() > MAX_IMAGE_BYTES) return null;
+                }
                 data = out.toByteArray();
             }
             BitmapFactory.Options o = new BitmapFactory.Options();

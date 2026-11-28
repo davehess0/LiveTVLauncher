@@ -87,16 +87,17 @@ final class Updater {
         try { return ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0).versionName; } catch (Exception e) { return "0"; }
     }
 
-    /** The token for a private repo: the one set on this device, else the one built in (local.properties). */
+    /**
+     * The token for a private repo: only one set on this device. (Never built into the APK: anyone can
+     * read a token out of a published APK.)
+     */
     static String token(Context ctx) {
-        String t = new Prefs(ctx).githubToken();
-        return !t.isEmpty() ? t : BuildConfig.GITHUB_TOKEN;
+        return new Prefs(ctx).githubToken();
     }
 
-    /** "set on this device", "built into this app" or "" (none). */
+    /** "set on this device" or "" (none). */
     static String tokenSource(Context ctx) {
-        if (!new Prefs(ctx).githubToken().isEmpty()) return "set on this device";
-        return BuildConfig.GITHUB_TOKEN.isEmpty() ? "" : "built into this app";
+        return new Prefs(ctx).githubToken().isEmpty() ? "" : "set on this device";
     }
 
     /** Asks GitHub for the latest release. Network call: run off the main thread. */

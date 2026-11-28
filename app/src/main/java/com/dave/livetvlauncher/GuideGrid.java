@@ -75,12 +75,26 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
 
     private final Activity host;
     private final Host cb;
+    private final boolean overlay;
+
+    // ---- Muted live preview of the selected channel (full-screen guide only; over the player a channel
+    //      is already playing). Starts after a short pause on a channel, so scrolling doesn't grab tuners.
+    private static final long PREVIEW_DELAY_MS = 1200;
+    private FrameLayout previewBox;
+    private androidx.media3.ui.PlayerView previewView;
+    private androidx.media3.exoplayer.ExoPlayer previewPlayer;
+    private VlcEngine previewVlc;
+    private TextView previewLabel;
+    private Channel previewCh;
+    private boolean shown;
+    private final Runnable startPreview = this::startPreview;
 
     /** @param overlay over live video: details on a fade at the top left, the grid on a dark panel below. */
     public GuideGrid(Activity host, boolean overlay, Host cb) {
         super(host);
         this.host = host;
         this.cb = cb;
+        this.overlay = overlay;
         prefs = new Prefs(host);
 
         int side = Ui.dp(host, Ui.SIDE_DP);
@@ -128,7 +142,17 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
             clock = Ui.text(host, 20, Ui.TEXT, true);
             header.addView(clock);
             root.addView(header);
-            root.addView(details, Ui.lp(-1, Ui.dp(host, 132)));
+            if (prefs.livePreview()) {
+                // Details on the left, a 16:9 muted preview of the selected channel on the right.
+                LinearLayout top = new LinearLayout(host);
+                top.setGravity(Gravity.CENTER_VERTICAL);
+                top.addView(details, Ui.lpWeight(0, -1, 1));
+                int ph = Ui.dp(host, 172), pw = Math.round(ph * 16f / 9f);
+                top.addView(buildPreview(), Ui.margins(Ui.lp(pw, ph), Ui.dp(host, 20), 0, 0, 0));
+                root.addView(top, Ui.margins(Ui.lp(-1, Ui.dp(host, 180)), 0, Ui.dp(host, 4), 0, Ui.dp(host, 4)));
+            } else {
+                root.addView(details, Ui.lp(-1, Ui.dp(host, 132)));
+            }
             panel = root;
         } else {
             // Over live video: details at the top left on a fade, so the picture still shows top right.
@@ -198,6 +222,7 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
 
     /** Call when shown: loads channels and keeps the clock and the "now" line moving. */
     public void start() {
+        shown = true;
         ChannelStore.get().addListener(this);
         ChannelStore.get().refreshIfStale(host, 30 * 60_000L);
         rebuild(true);
@@ -207,8 +232,96 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
 
     /** Call when hidden. */
     public void stop() {
+        shown = false;
+        stopPreview(); // frees the tuner straight away
         ChannelStore.get().removeListener(this);
         handler.removeCallbacks(ticker);
+    }
+
+    private View buildPreview() {
+        previewBox = new FrameLayout(host);
+        previewBox.setBackground(Ui.glass(host, Ui.PANEL, Ui.dp(host, 14), false));
+        int pad = Ui.dp(host, 4);
+        previewBox.setPadding(pad, pad, pad, pad);
+        previewLabel = Ui.text(host, 26, Ui.SUB, true);
+        previewLabel.setGravity(Gravity.CENTER);
+        previewBox.addView(previewLabel, new FrameLayout.LayoutParams(-1, -1));
+        previewView = new androidx.media3.ui.PlayerView(host);
+        previewView.setUseController(false);
+        previewView.setVisibility(View.GONE);
+        previewView.setShutterBackgroundColor(0);
+        previewBox.addView(previewView, new FrameLayout.LayoutParams(-1, -1));
+        return previewBox;
+    }
+
+    /** The selected channel changed: preview it after a short pause (only one tuner is ever used). */
+    private void schedulePreview(Channel ch) {
+        // Same channel (also after a guide refresh, which makes new channel objects): keep playing.
+        if (previewBox == null || (previewCh != null && ch.number.equals(previewCh.number))) return;
+        stopPreview();
+        previewCh = ch;
+        previewLabel.setText(ch.number);
+        if (!shown || ch.streamUrl.isEmpty()) return;
+        handler.postDelayed(startPreview, PREVIEW_DELAY_MS);
+    }
+
+    private void startPreview() {
+        final Channel ch = previewCh;
+        if (ch == null || !shown) return;
+        previewPlayer = new androidx.media3.exoplayer.ExoPlayer.Builder(host).build();
+        previewPlayer.setVolume(0f);
+        previewPlayer.addListener(new androidx.media3.common.Player.Listener() {
+            @Override public void onTracksChanged(androidx.media3.common.Tracks t) {
+                // No decoder for this video here (e.g. MPEG-2 on a tablet): preview it with VLC instead.
+                if (t.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)
+                        && !t.isTypeSupported(androidx.media3.common.C.TRACK_TYPE_VIDEO) && previewCh == ch) {
+                    releaseExoPreview();
+                    previewVlc = new VlcEngine(host, previewBox, 1, new VlcEngine.Listener() {
+                        @Override public void onPlaying() { if (previewCh == ch) previewLabel.setVisibility(View.INVISIBLE); }
+                        @Override public void onBuffering(boolean b) { }
+                        @Override public void onError(String why) { if (previewCh == ch) stopPreview(); }
+                        @Override public void onEnded() { if (previewCh == ch) stopPreview(); }
+                    });
+                    previewVlc.setMuted(true);
+                    previewVlc.play(ch.streamUrl, 0);
+                }
+            }
+            @Override public void onPlaybackStateChanged(int state) {
+                if (state == androidx.media3.common.Player.STATE_READY && previewCh == ch) {
+                    previewView.setVisibility(View.VISIBLE);
+                    previewLabel.setVisibility(View.INVISIBLE);
+                }
+            }
+            @Override public void onPlayerError(androidx.media3.common.PlaybackException e) {
+                // Usually all tuners are busy: just keep showing the channel number.
+                AppLog.w("Guide", "Full Guide preview of " + ch.number + " didn't start (" + e.getErrorCodeName() + ")");
+                if (previewCh == ch) releaseExoPreview();
+            }
+        });
+        previewView.setPlayer(previewPlayer);
+        androidx.media3.common.MediaItem.Builder mi = new androidx.media3.common.MediaItem.Builder().setUri(ch.streamUrl);
+        if (ch.streamUrl.toLowerCase(Locale.US).contains("m3u8")) mi.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+        previewPlayer.setMediaItem(mi.build());
+        previewPlayer.prepare();
+        previewPlayer.setPlayWhenReady(true);
+    }
+
+    private void releaseExoPreview() {
+        if (previewPlayer != null) {
+            previewView.setPlayer(null);
+            previewPlayer.release();
+            previewPlayer = null;
+        }
+        if (previewView != null) previewView.setVisibility(View.GONE);
+    }
+
+    /** Stop the preview and let go of its tuner. */
+    private void stopPreview() {
+        handler.removeCallbacks(startPreview);
+        releaseExoPreview();
+        if (previewVlc != null) { previewVlc.release(); previewVlc = null; }
+        if (previewLabel != null) previewLabel.setVisibility(View.VISIBLE);
+        previewCh = null;
     }
 
     /** Opens on host channel at the current time (the player's guide opens on what you're watching). */
@@ -263,6 +376,12 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
         }
 
         if (channels.isEmpty()) {
+            rowsBox.removeAllViews(); // don't leave the old rows behind the message
+            rowViews.clear();
+            strips.clear();
+            sel = -1;
+            selShow = null;
+            selCell = null;
             empty.setText(ChannelStore.get().isLoaded() ? "No channels to show." : "Loading channels…");
             empty.setVisibility(View.VISIBLE);
             return;
@@ -454,6 +573,7 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
             markRow(row, true);
             scrollToRow(row, animate);
         }
+        if (!overlay) schedulePreview(channels.get(row));
         showDetails();
     }
 
@@ -658,7 +778,8 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
         Channel ch = channels.get(sel);
         Channel.Airing a = selShow;
         long now = nowSec();
-        if (noGuide.contains(a) || (a.start <= now && now < a.end)) { watch(ch); return; }
+        // On now (or started since it was selected, with the guide left open): just watch it.
+        if (noGuide.contains(a) || a.start <= now) { watch(ch); return; }
         boolean reminder = Reminders.has(host, ch.number, a.start);
         View anchorView = selCell != null ? selCell : rowViews.get(sel);
         AppMenu.show(host, anchorView,
@@ -679,6 +800,7 @@ public final class GuideGrid extends FrameLayout implements ChannelStore.Listene
     }
 
     private void watch(Channel ch) {
+        stopPreview(); // the preview's tuner, before the player takes one
         cb.onWatch(ch);
     }
 }

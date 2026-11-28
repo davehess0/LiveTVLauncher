@@ -241,6 +241,10 @@ public final class SettingsActivity extends Activity {
             prefs.setMatchFrameRate(!prefs.matchFrameRate());
             render();
         });
+        if ("NVIDIA".equalsIgnoreCase(android.os.Build.MANUFACTURER)) {
+            // A system setting apps can't change: open the Shield's Display & Sound page where it lives.
+            row("Shield AI upscaling", "Set in Display & Sound → AI-enhanced upscaling", v -> openDisplaySettings());
+        }
         String dv7 = prefs.dvProfile7Mode();
         row("Dolby Vision profile 7", Prefs.DV7_DV.equals(dv7) ? "Always Dolby Vision"
                 : Prefs.DV7_HDR10.equals(dv7) ? "Always HDR10" : "Automatic", v -> {
@@ -248,6 +252,16 @@ public final class SettingsActivity extends Activity {
             prefs.setDvProfile7Mode(Prefs.DV7_AUTO.equals(m) ? Prefs.DV7_DV : Prefs.DV7_DV.equals(m) ? Prefs.DV7_HDR10 : Prefs.DV7_AUTO);
             render();
         });
+    }
+
+    /** The Shield's Display & Sound page (AI-enhanced upscaling, frame-rate and HDR matching). */
+    private void openDisplaySettings() {
+        for (String action : new String[]{android.provider.Settings.ACTION_DISPLAY_SETTINGS, android.provider.Settings.ACTION_SETTINGS}) {
+            try {
+                startActivity(new android.content.Intent(action));
+                return;
+            } catch (Exception ignored) { }
+        }
     }
 
     /** Status dots: working, set up but not loading, or off. */

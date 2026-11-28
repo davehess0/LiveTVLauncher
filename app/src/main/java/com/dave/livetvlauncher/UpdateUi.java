@@ -186,12 +186,12 @@ final class UpdateUi {
                 }
                 UI.post(() -> msg.setText("Installing… Confirm on the next screen. The launcher restarts on the new version."));
                 Updater.install(app, apk);
-                UI.postDelayed(() -> { if (dlg.isShowing()) dlg.dismiss(); }, 4000);
+                UI.postDelayed(() -> { if (!gone(a) && dlg.isShowing()) dlg.dismiss(); }, 4000);
             } catch (Exception e) {
                 AppLog.w("Update", "Install failed: " + e.getMessage());
                 UI.post(() -> {
+                    if (gone(a)) return; // its screen has closed (dismissing then would crash)
                     if (dlg.isShowing()) dlg.dismiss();
-                    if (gone(a)) return;
                     new AlertDialog.Builder(a).setTitle("Update didn't install").setMessage(e.getMessage())
                             .setPositiveButton("OK", null).show();
                 });

@@ -1074,7 +1074,7 @@ public final class PlayerActivity extends Activity {
         if (jelly != null) {
             // The first report starts the session; the server marks it watched near the end by itself.
             final String st = "stopped".equals(state) ? "stopped" : !jellyStarted ? "playing" : state;
-            if (!"stopped".equals(state)) jellyStarted = true;
+            jellyStarted = !"stopped".equals(state); // after a stop, the next report starts a new session
             final JellyfinClient jc = jelly;
             final String id = plexKey, msid = mediaSourceId;
             net.execute(() -> jc.report(st, id, msid, pos));
@@ -1581,6 +1581,7 @@ public final class PlayerActivity extends Activity {
             if (started[0]) return;
             started[0] = true;
             dm.unregisterDisplayListener(l[0]);
+            if (switchListener == l[0]) switchListener = null;
             AppLog.i("Player", "TV at " + describe(display().getMode()) + " after " + (System.currentTimeMillis() - asked) + " ms · starting");
             displaySwitchAt = System.currentTimeMillis();
             if (!isFinishing()) start.run();
@@ -1595,6 +1596,7 @@ public final class PlayerActivity extends Activity {
             }
         };
         dm.registerDisplayListener(l[0], handler);
+        switchListener = l[0];
         handler.postDelayed(go, 6000); // in case no change is reported
         WindowManager.LayoutParams lp = getWindow().getAttributes();
         lp.preferredDisplayModeId = target;
@@ -1697,7 +1699,14 @@ public final class PlayerActivity extends Activity {
         return false;
     }
 
+    /** Listener of a frame-rate switch still waiting for the TV (let go of when the player stops). */
+    private android.hardware.display.DisplayManager.DisplayListener switchListener;
+
     private void stopWaitingForDisplay() {
+        if (switchListener != null) {
+            getSystemService(android.hardware.display.DisplayManager.class).unregisterDisplayListener(switchListener);
+            switchListener = null;
+        }
         if (displayWait == null) return;
         getSystemService(android.hardware.display.DisplayManager.class).unregisterDisplayListener(displayWait);
         displayWait = null;
@@ -1711,7 +1720,8 @@ public final class PlayerActivity extends Activity {
     private void retryOrFail(String reason) {
         AppLog.w("Player", "Channel " + nums[index] + ": " + reason + (retries < 2 ? " · retune " + (retries + 1) + "/2" : " · giving up"));
         if (retries++ < 2) {
-            handler.postDelayed(() -> tune(index, false), 1500);
+            handler.removeCallbacks(retune);
+            handler.postDelayed(retune, 1500);
         } else {
             showError("Couldn't play " + nums[index] + " " + names[index] + "\n" + reason
                     + "\n\nAll tuners may be in use. Try another channel or press Back.");
@@ -1826,8 +1836,12 @@ public final class PlayerActivity extends Activity {
         return label + (mimes.length() > 0 ? " (" + mimes + ")" : "") + " ";
     }
 
+    /** Retry of a channel that failed; cancelled when you tune something else meanwhile. */
+    private final Runnable retune = () -> tune(index, false);
+
     private void tune(int i, boolean userAction) {
         if (player == null) return;
+        if (userAction) handler.removeCallbacks(retune);
         if (userAction && i != index) previousIndex = index;
         index = (i + nums.length) % nums.length;
         if (userAction) retries = 0;
