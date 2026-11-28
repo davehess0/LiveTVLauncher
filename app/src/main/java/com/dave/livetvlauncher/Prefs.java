@@ -166,6 +166,10 @@ public final class Prefs {
     public boolean matchFrameRate() { return sp.getBoolean("matchFrameRate", true); }
     public void setMatchFrameRate(boolean v) { sp.edit().putBoolean("matchFrameRate", v).apply(); }
 
+    /** Dolby Vision profile 7 (UHD Blu-ray rips): false = Dolby Vision decoder, true = play its HDR10 base layer. */
+    public boolean dvProfile7AsHdr10() { return sp.getBoolean("dvP7Hdr10", false); }
+    public void setDvProfile7AsHdr10(boolean v) { sp.edit().putBoolean("dvP7Hdr10", v).apply(); }
+
     public boolean subtitles() { return sp.getBoolean("subtitles", false); }
     public void setSubtitles(boolean v) { sp.edit().putBoolean("subtitles", v).apply(); }
 

@@ -1187,7 +1187,10 @@ public final class PlayerActivity extends Activity {
                 if (!seen.add(i.name + "|" + i.mimeType)) continue;
                 (androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION.equals(i.mimeType) ? dv : base).add(i);
             }
-            if (dvBaseLayerOnly && !base.isEmpty()) return base;
+            if ((dvBaseLayerOnly || (isDvProfile7(format) && prefs.dvProfile7AsHdr10())) && !base.isEmpty()) {
+                if (!dvBaseLayerOnly) AppLog.i("Player", "Dolby Vision profile 7 · playing the HDR10 base layer (Settings → Playback)");
+                return base;
+            }
             dvConfigAttempt = 0;
             // Profile 7: offer each DV decoder twice, first configured as profile 7, then as 8.1.
             if (isDvProfile7(format)) {
@@ -1380,7 +1383,8 @@ public final class PlayerActivity extends Activity {
             return;
         }
         if (fps <= 0) {
-            AppLog.i("Player", "Frame rate unknown · TV stays at " + describe(cur) + " (the Shield's own matching may still switch it)");
+            // Not in the file (common in MKV): measure it from the first few seconds of frames.
+            measureFrameRate();
             return;
         }
         if (fits(cur.getRefreshRate(), fps)) {
@@ -1411,6 +1415,52 @@ public final class PlayerActivity extends Activity {
             if (isFinishing()) return;
             AppLog.i("Player", "TV now at " + describe(display().getMode()) + " (" + (System.currentTimeMillis() - asked) / 1000 + " s after asking)");
         }, 5000);
+    }
+
+    private androidx.media3.exoplayer.video.VideoFrameMetadataListener fpsProbe;
+
+    /**
+     * Frame rate from the video's own timestamps: ~3 s of frames, then the nearest standard rate.
+     * MKV timestamps are whole milliseconds, so the average over many frames is what separates
+     * 23.976 from 24.
+     */
+    private void measureFrameRate() {
+        if (player == null) return;
+        final long[] ts = new long[80];
+        final int[] n = {0};
+        fpsProbe = (presentationTimeUs, releaseTimeNs, format, mediaFormat) -> {
+            if (n[0] >= ts.length) return;
+            if (n[0] > 0 && presentationTimeUs <= ts[n[0] - 1]) { n[0] = 0; } // seek / reorder: start over
+            ts[n[0]++] = presentationTimeUs;
+            if (n[0] < ts.length) return;
+            // Typical gap (median), then the average of the normal gaps (skips any dropped frames).
+            long[] gaps = new long[ts.length - 1];
+            for (int i = 1; i < ts.length; i++) gaps[i - 1] = ts[i] - ts[i - 1];
+            long[] sorted = gaps.clone();
+            java.util.Arrays.sort(sorted);
+            long median = sorted[sorted.length / 2];
+            long sum = 0; int count = 0;
+            for (long g : gaps) if (g > 0 && g < median * 1.5) { sum += g; count++; }
+            final float measured = count > 0 ? 1_000_000f * count / sum : 0;
+            handler.post(() -> {
+                if (player != null && fpsProbe != null) player.clearVideoFrameMetadataListener(fpsProbe);
+                fpsProbe = null;
+                float std = standardRate(measured);
+                AppLog.i("Player", String.format(java.util.Locale.US, "Measured frame rate %.3f fps", measured)
+                        + (std > 0 ? String.format(java.util.Locale.US, " → %.3f", std) : " (not a standard rate)"));
+                if (std > 0 && !isFinishing()) { frameRateSet = false; matchFrameRate(std); }
+            });
+        };
+        player.setVideoFrameMetadataListener(fpsProbe);
+        AppLog.i("Player", "Frame rate not in the file · measuring it from the video");
+    }
+
+    /** The nearest common video frame rate, if the measurement is within 0.3 % of it. */
+    private static float standardRate(float fps) {
+        float[] rates = {24000f / 1001, 24, 25, 30000f / 1001, 30, 50, 60000f / 1001, 60};
+        float best = 0;
+        for (float r : rates) if (Math.abs(fps - r) < r * 0.003f && (best == 0 || Math.abs(fps - r) < Math.abs(fps - best))) best = r;
+        return best;
     }
 
     /** The refresh rate shows each frame for a whole number of refreshes (1 or 2), to within 0.05 % (so 24 Hz doesn't count as 23.976). */

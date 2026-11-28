@@ -241,6 +241,10 @@ public final class SettingsActivity extends Activity {
             prefs.setMatchFrameRate(!prefs.matchFrameRate());
             render();
         });
+        row("Dolby Vision profile 7", prefs.dvProfile7AsHdr10() ? "Play as HDR10" : "Dolby Vision", v -> {
+            prefs.setDvProfile7AsHdr10(!prefs.dvProfile7AsHdr10());
+            render();
+        });
     }
 
     /** Status dots: working, set up but not loading, or off. */
